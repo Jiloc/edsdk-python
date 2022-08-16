@@ -4,7 +4,7 @@ import pathlib
 from setuptools import setup, Extension
 
 package_name = "edsdk-python"
-version = "0.0.1"
+version = "0.1"
 
 here = os.path.abspath(os.path.dirname(__file__))
 
@@ -20,7 +20,7 @@ _DEBUG_LEVEL = 0
 
 extra_compile_args = []
 if _DEBUG:
-    extra_compile_args += ["/DDEBUG=%s" % _DEBUG_LEVEL]
+    extra_compile_args += ["/W4", "/DDEBUG=%s" % _DEBUG_LEVEL]
 else:
     extra_compile_args += ["/DNDEBUG"]
 
@@ -33,8 +33,8 @@ extension = Extension(
     libraries=["EDSDK"],
     include_dirs=[os.path.join(EDSDK_PATH, "EDSDK/Header")],
     library_dirs=[os.path.join(EDSDK_PATH, "EDSDK_64/Library")],
-    depends=["edsdk/edsdk_python.h", "edsdk/edsdk_error_map.h"],
-    sources=["edsdk/edsdk_python.cpp","edsdk/edsdk_error_map.cpp"],
+    depends=["edsdk/edsdk_python.h", "edsdk/edsdk_utils.h"],
+    sources=["edsdk/edsdk_python.cpp","edsdk/edsdk_utils.cpp"],
     extra_compile_args=extra_compile_args,
 )
 

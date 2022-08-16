@@ -2,23 +2,12 @@
 #include "datetime.h"
 
 #include "EDSDK.h"
-#include "edsdk_error_map.h"
+#include "edsdk_utils.h"
 
 #include <cassert>
 #include <cstring>
-#include <functional>
 #include <iostream>
 #include <map>
-
-
-#define PyCheck_EDSERROR(err) \
-    if (err != EDS_ERR_OK) { \
-    	PyObject *exc_args = PyTuple_New(2); \
-	    PyTuple_SetItem(exc_args, 0, PyUnicode_FromString(EDS::errorMessage(err))); \
-	    PyTuple_SetItem(exc_args, 1, PyLong_FromLong(err)); \
-	    PyErr_SetObject(PyEdsError, exc_args); \
-        return nullptr; \
-    }
 
 
 typedef struct {
@@ -84,7 +73,7 @@ static PyObject *PyEdsError_tp_str(PyObject *self)
 
 
 
-static PyObject *PyEdsError_getcode(PyObject *self, void *closure)
+static PyObject *PyEdsError_getcode(PyObject *self, void *Py_UNUSED(closure))
 {
 	// Like before, but with less checks, it is okay for this function to fail
 	PyObject *args = PyObject_GetAttrString(self, "args");
@@ -182,27 +171,6 @@ inline PyObject* GetEnum(const char* moduleName, const char* enumClassName, cons
 }
 
 
-static std::map<EdsDataType const, std::size_t const> const EdsDataTypeSize = {
-    {kEdsDataType_Bool, sizeof(EdsBool)},
-    {kEdsDataType_Int8, sizeof(EdsInt8)},
-    {kEdsDataType_UInt8, sizeof(EdsUInt8)},
-    {kEdsDataType_Int16, sizeof(EdsInt16)},
-    {kEdsDataType_UInt16, sizeof(EdsUInt16)},
-    {kEdsDataType_Int32, sizeof(EdsInt32)},
-    {kEdsDataType_UInt32, sizeof(EdsUInt32)},
-    {kEdsDataType_Int64, sizeof(EdsInt64)},
-    {kEdsDataType_UInt64, sizeof(EdsUInt64)},
-    {kEdsDataType_Float, sizeof(EdsFloat)},
-    {kEdsDataType_Double, sizeof(EdsDouble)},
-    {kEdsDataType_Rational, sizeof(EdsRational)},
-    {kEdsDataType_Point, sizeof(EdsPoint)},
-    {kEdsDataType_Rect, sizeof(EdsRect)},
-    {kEdsDataType_Time, sizeof(EdsTime)},
-    {kEdsDataType_FocusInfo, sizeof(EdsFocusInfo)},
-    {kEdsDataType_PictureStyleDesc, sizeof(EdsPictureStyleDesc)},
-};
-
-
 PyDoc_STRVAR(PyEds_InitializeSDK__doc__,
 "Initializes the libraries.\n"
 "When using the EDSDK libraries, you must call this API once\n"
@@ -212,7 +180,7 @@ PyDoc_STRVAR(PyEds_InitializeSDK__doc__,
 static PyObject* PyEds_InitializeSDK(PyObject *Py_UNUSED(self)) {
     unsigned long retVal(EdsInitializeSDK());
     PyCheck_EDSERROR(retVal);
-    return PyLong_FromUnsignedLong(retVal);
+    Py_RETURN_NONE;
 }
 
 
@@ -225,22 +193,17 @@ PyDoc_STRVAR(PyEds_TerminateSDK__doc__,
 static PyObject* PyEds_TerminateSDK(PyObject *Py_UNUSED(self)) {
     unsigned long retVal(EdsTerminateSDK());
     PyCheck_EDSERROR(retVal);
-    return PyLong_FromUnsignedLong(retVal);
+    Py_RETURN_NONE;
 }
 
 
-PyDoc_STRVAR(PyEds_GetCameraList__doc__,
-"Gets camera list objects.\n\n"
-":raises EdsError: Any of the sdk errors.\n"
-":return EdsObject: the camera-list.");
-
-static PyObject* PyEds_GetCameraList(PyObject *Py_UNUSED(self)) {
-    EdsCameraListRef cameraList;
-    unsigned long retVal(EdsGetCameraList(&cameraList));
-    PyCheck_EDSERROR(retVal);
-    return PyEdsObject_New(cameraList);
-}
-
+/******************************************************************************
+*******************************************************************************
+//
+//  Item-tree operating functions
+//
+*******************************************************************************
+******************************************************************************/
 
 PyDoc_STRVAR(PyEds_GetChildCount__doc__,
 "Gets the number of child objects of the designated object.\n"
@@ -289,373 +252,36 @@ static PyObject* PyEds_GetChildAtIndex(PyObject *Py_UNUSED(self), PyObject *args
 }
 
 
-PyDoc_STRVAR(PyEds_OpenSession__doc__,
-"Establishes a logical connection with a remote camera.\n"
-"Use this API after getting the camera's EdsCamera object.\n\n"
-":param PyEdsObject camera: the camera.\n"
-":raises EdsError: Any of the sdk errors.");
+PyDoc_STRVAR(PyEds_GetParent__doc__,
+"Gets the parent object of the designated object.\n\n"
+":param EdsObject item: the item object.\n"
+":raises EdsError: Any of the sdk errors.\n"
+":return EdsObject: the parent object.");
 
-static PyObject* PyEds_OpenSession(PyObject *Py_UNUSED(self), PyObject *args) {
-    PyObject* pyObj;
-    if (!PyArg_ParseTuple(args, "O:EdsOpenSession", &pyObj)) {
-        return nullptr;
-    }
-    PyEdsObject* edsObj = PyToEds(pyObj);
+static PyObject* PyEds_GetParent(PyObject *Py_UNUSED(self), PyObject *pyChildObj) {
+    PyEdsObject* edsObj = PyToEds(pyChildObj);
     if (!edsObj) {
         return nullptr;
     }
-    unsigned long retVal(EdsOpenSession(edsObj->edsObj));
+    EdsBaseRef parent;
+    unsigned long retVal(EdsGetParent(edsObj->edsObj, &parent));
     PyCheck_EDSERROR(retVal);
-    Py_RETURN_NONE;
+    return PyEdsObject_New(parent);
 }
 
 
-PyDoc_STRVAR(PyEds_CloseSession__doc__,
-"Closes a logical connection with a remote camera.\n\n"
-":param PyEdsObject camera: the camera.\n"
-":raises EdsError: Any of the sdk errors.");
-
-static PyObject* PyEds_CloseSession(PyObject *Py_UNUSED(self), PyObject *args) {
-    PyObject* pyObj;
-    if (!PyArg_ParseTuple(args, "O:EdsCloseSession", &pyObj)) {
-        return nullptr;
-    }
-    PyEdsObject* edsObj = PyToEds(pyObj);
-    if (!edsObj) {
-        return nullptr;
-    }
-    unsigned long retVal(EdsCloseSession(edsObj->edsObj));
-    PyCheck_EDSERROR(retVal);
-    Py_RETURN_NONE;
-}
-
-
-PyObject* pySetCameraStateCallback = nullptr;
-
-PyDoc_STRVAR(PyEds_SetCameraStateEventHandler__doc__,
-"Registers a callback function for receiving status\n"
-"\tchange notification events for property states on a camera\n\n"
-":param PyEdsObject camera: the camera object.\n"
-":param StateEvent event: the event to be supplemented.\n"
-"\tTo designate all events, use StateEvent.All.\n"
-":param Callable callback: the callback for receiving the events.\n"
-"\tExpected signature (event: StateEvent, event_data: int) -> int.\n"
-":raises EdsError: Any of the sdk errors.");
-
-static PyObject* PyEds_SetCameraStateEventHandler(PyObject *Py_UNUSED(self), PyObject *args) {
-    PyObject* pyObj;
-    unsigned long event;
-    PyObject* pyCallable;
-    // PyObject* pyContext;
-    if (!PyArg_ParseTuple(args, "OkO:EdsSetCameraStateEventHandler", &pyObj, &event, &pyCallable)) {
-        return nullptr;
-    }
-    PyEdsObject* edsObj = PyToEds(pyObj);
-    if (!edsObj) {
-        return nullptr;
-    }
-
-    if (pyCallable == Py_None || !PyCallable_Check(pyCallable)){
-
-        PyErr_Format(PyExc_ValueError, "expected a callable object");
-        return nullptr;
-    }
-
-    if (!PyCallable_CheckNumberOfParameters(pyCallable, 2)) {
-        PyErr_Format(PyExc_ValueError, "expected a callable object with 2 parameters (inEvent, inEventData)");
-        return nullptr;
-    }
-
-    if (pySetCameraStateCallback != nullptr) {
-        Py_DECREF(pySetCameraStateCallback);
-    }
-
-    pySetCameraStateCallback = pyCallable;
-
-    Py_INCREF(pySetCameraStateCallback);
-
-    auto callbackWrapper = [](EdsStateEvent inEvent, EdsUInt32 inEventData, EdsVoid* inContext) -> EdsError {
-        PyGILState_STATE gstate;
-        gstate = PyGILState_Ensure();
-
-        PyObject* pyEvent = GetEnum("edsdk.constants", "StateEvent", inEvent);
-        if (pyEvent == nullptr) {
-            PyErr_Clear();
-            std::cout << "Unknown State Event: " << inEvent << std::endl;
-            pyEvent = PyLong_FromUnsignedLong(inEvent);
-        }
-        PyObject* pyEventData = PyLong_FromUnsignedLong(inEventData);
-        PyObject* pyContext = static_cast<PyObject *>(inContext);
-        PyObject* pyRetVal = PyObject_CallFunctionObjArgs(pyContext, pyEvent, pyEventData, nullptr);
-        if (pyRetVal == nullptr) {
-            PyErr_Format(PyExc_ValueError, "unable to call the callback");
-            Py_DECREF(pyEvent);
-            Py_DECREF(pyEventData);
-            return EDS_ERR_INVALID_FN_POINTER;
-        }
-
-        unsigned long retVal(PyLong_AsUnsignedLong(pyRetVal));
-        Py_DECREF(pyEvent);
-        Py_DECREF(pyEventData);
-        Py_DECREF(pyRetVal);
-
-        PyGILState_Release(gstate);
-        return retVal;
-    };
-
-    unsigned long retVal(
-        EdsSetCameraStateEventHandler(
-            edsObj->edsObj, event,
-            callbackWrapper,
-            pySetCameraStateCallback));
-
-    if (retVal != EDS_ERR_OK) {
-        Py_DECREF(pySetCameraStateCallback);
-        PyCheck_EDSERROR(retVal);
-    }
-    Py_RETURN_NONE;
-}
-
-
-static PyObject *pySetObjectCallback = nullptr;
-
-PyDoc_STRVAR(PyEds_SetObjectEventHandler__doc__,
-"Registers a callback function for receiving status\n"
-"\tchange notification events for objects on a remote camera\n"
-"Here, object means volumes representing memory cards, files and directories,\n"
-"\tand shot images stored in memory, in particular.\n\n"
-":param PyEdsObject camera: the camera object.\n"
-":param ObjectEvent event: the event to be supplemented.\n"
-"\tTo designate all events, use ObjectEvent.All.\n"
-":param Callable callback: the callback for receiving events.\n"
-"\tExpected signature (event: ObjectEvent, obj_ref: PyEdsObject) -> int.\n"
-":raises EdsError: Any of the sdk errors.");
-
-static PyObject* PyEds_SetObjectEventHandler(PyObject *Py_UNUSED(self), PyObject *args) {
-    PyObject* pyObj;
-    unsigned long event;
-    PyObject* pyCallable;
-    if (!PyArg_ParseTuple(args, "OkO:EdsSetObjectEventHandler", &pyObj, &event, &pyCallable)) {
-        return nullptr;
-    }
-
-    PyEdsObject* edsObj = PyToEds(pyObj);
-    if (!edsObj) {
-        return nullptr;
-    }
-
-    if (pyCallable == Py_None || !PyCallable_Check(pyCallable)){
-        PyErr_Format(PyExc_ValueError, "expected a callable object");
-        return nullptr;
-    }
-
-    if (!PyCallable_CheckNumberOfParameters(pyCallable, 2)) {
-        PyErr_Format(PyExc_ValueError, "expected a callable object with 2 parameters (inEvent, inRef)");
-        return nullptr;
-    }
-
-    if (pySetObjectCallback != nullptr) {
-        Py_DECREF(pySetObjectCallback);
-    }
-    pySetObjectCallback = pyCallable;
-    Py_INCREF(pySetObjectCallback);
-
-    auto callbackWrapper = [](EdsStateEvent inEvent, EdsBaseRef inRef, EdsVoid* inContext) -> EdsError {
-
-        PyGILState_STATE gstate;
-        gstate = PyGILState_Ensure();
-
-        PyObject* pyContext = static_cast<PyObject *>(inContext);
-        PyObject* pyEvent = GetEnum("edsdk.constants", "ObjectEvent", inEvent);
-        if (pyEvent == nullptr) {
-            PyErr_Clear();
-            std::cout << "Unknown Object Event: " << inEvent  << std::endl;
-            pyEvent = PyLong_FromUnsignedLong(inEvent);
-        }
-        PyObject* pyInRef = PyEdsObject_New(inRef);
-        PyObject* pyRetVal = PyObject_CallFunctionObjArgs(pyContext, pyEvent, pyInRef, nullptr);
-        if (pyRetVal == nullptr) {
-            PyErr_Format(PyExc_ValueError, "unable to call the callback");
-            Py_DECREF(pyEvent);
-            Py_DECREF(pyInRef);
-            return EDS_ERR_INVALID_FN_POINTER;
-        }
-        unsigned long retVal(PyLong_AsUnsignedLong(pyRetVal));
-        Py_DECREF(pyEvent);
-        Py_DECREF(pyInRef);
-        Py_DECREF(pyRetVal);
-
-        PyGILState_Release(gstate);
-        return retVal;
-    };
-
-    unsigned long retVal(EdsSetObjectEventHandler(edsObj->edsObj, event, callbackWrapper, pySetObjectCallback));
-
-    if (retVal != EDS_ERR_OK) {
-        Py_DECREF(pySetObjectCallback);
-        PyCheck_EDSERROR(retVal);
-    }
-    Py_RETURN_NONE;
-}
-
-
-static PyObject *pySetPropertyCallback = nullptr;
-
-PyDoc_STRVAR(PyEds_SetPropertyEventHandler__doc__,
-"Registers a callback function for receiving status\n"
-"\tchange notification events for property states on a camera.\n\n"
-":param PyEdsObject camera: the camera object.\n"
-":param PropertyEvent event: the event to be supplemented.\n"
-"\tTo designate all events, use PropertyEvent.All.\n"
-":param Callable callback: the callback for receiving events.\n"
-"\tExpected signature (event: StateEvent, prop_id: PropID, param: int) -> int.\n"
-":raises EdsError: Any of the sdk errors.");
-
-static PyObject* PyEds_SetPropertyEventHandler(PyObject *Py_UNUSED(self), PyObject *args) {
-    PyObject* pyObj;
-    unsigned long event;
-    PyObject* pyCallable;
-
-    if (!PyArg_ParseTuple(args, "OkO:EdsSetPropertyEventHandler", &pyObj, &event, &pyCallable)) {
-        return nullptr;
-    }
-
-    PyEdsObject* edsObj = PyToEds(pyObj);
-    if (!edsObj) {
-        return nullptr;
-    }
-
-    if (pyCallable == Py_None || !PyCallable_Check(pyCallable)){
-        PyErr_Format(PyExc_ValueError, "expected a callable object");
-        return nullptr;
-    }
-
-    if (!PyCallable_CheckNumberOfParameters(pyCallable, 3)) {
-        PyErr_Format(PyExc_ValueError, "expected a callable object with 3 parameters (inEvent, inPropertyID, inParam)");
-        return nullptr;
-    }
-
-    if (pySetPropertyCallback != nullptr) {
-        Py_DECREF(pySetPropertyCallback);
-    }
-
-    pySetPropertyCallback = pyCallable;
-
-    Py_INCREF(pySetPropertyCallback);
-
-    auto callbackWrapper = [](EdsPropertyEvent inEvent, EdsPropertyID inPropertyID, EdsUInt32 inParam, EdsVoid* inContext) -> EdsError {
-
-        PyGILState_STATE gstate;
-        gstate = PyGILState_Ensure();
-
-        PyObject* pyContext = static_cast<PyObject *>(inContext);
-        PyObject* pyEvent = GetEnum("edsdk.constants", "PropertyEvent", inEvent);
-        if (pyEvent == nullptr) {
-            PyErr_Clear();
-            std::cout << "Unknown Property Event: " << inEvent  << std::endl;
-            pyEvent = PyLong_FromUnsignedLong(inEvent);
-        }
-        PyObject* pyPropertyID = GetEnum("edsdk.constants", "PropID", inPropertyID);
-        if (pyPropertyID == nullptr) {
-            PyErr_Clear();
-            std::cout << "Unknown Property ID: " << inPropertyID  << std::endl;
-            pyPropertyID = PyLong_FromUnsignedLong(inPropertyID);
-        }
-        PyObject* pyParam = PyLong_FromUnsignedLong(inParam);
-
-        PyObject* pyRetVal = PyObject_CallFunctionObjArgs(pyContext, pyEvent, pyPropertyID, pyParam, nullptr);
-        if (pyRetVal == nullptr) {
-            PyErr_Format(PyExc_ValueError, "unable to call the callback");
-            Py_DECREF(pyEvent);
-            Py_DECREF(pyPropertyID);
-            Py_DECREF(pyParam);
-            return EDS_ERR_INVALID_FN_POINTER;
-        }
-        unsigned long retVal(PyLong_AsUnsignedLong(pyRetVal));
-        Py_DECREF(pyRetVal);
-        Py_DECREF(pyEvent);
-        Py_DECREF(pyParam);
-        Py_DECREF(pyPropertyID);
-
-        PyGILState_Release(gstate);
-        return retVal;
-    };
-
-    unsigned long retVal(EdsSetPropertyEventHandler(edsObj->edsObj, event, callbackWrapper, pySetPropertyCallback));
-    if (retVal != EDS_ERR_OK) {
-        Py_DECREF(pySetPropertyCallback);
-        PyCheck_EDSERROR(retVal);
-    }
-    Py_RETURN_NONE;
-
-}
-
-
-static PyObject *pyCameraAddedCallback = nullptr;
-
-PyDoc_STRVAR(PyEds_SetCameraAddedHandler__doc__,
-"Registers a callback function for when a camera is detected.\n\n"
-":param Callable callback: the callback called when a camera is connected.\n"
-"\tExpected signature () -> int.\n"
-":raises EdsError: Any of the sdk errors.");
-
-static PyObject* PyEds_SetCameraAddedHandler(PyObject *Py_UNUSED(self), PyObject *args) {
-    PyObject* pyCallable;
-    if (!PyArg_ParseTuple(args, "O:EdsSetCameraAddedHandler", &pyCallable)) {
-        return nullptr;
-    }
-
-    if (pyCallable == Py_None || !PyCallable_Check(pyCallable)){
-        PyErr_Format(PyExc_ValueError, "expected a callable object");
-        return nullptr;
-    }
-
-    if (!PyCallable_CheckNumberOfParameters(pyCallable, 0)) {
-        PyErr_Format(PyExc_ValueError, "expected a callable object with 0 parameters");
-        return nullptr;
-    }
-
-    if (pyCameraAddedCallback != nullptr) {
-        Py_DECREF(pyCameraAddedCallback);
-    }
-    pyCameraAddedCallback = pyCallable;
-
-    Py_INCREF(pyCameraAddedCallback);
-
-    auto callbackWrapper = [](EdsVoid* inContext) -> EdsError {
-        PyGILState_STATE gstate;
-        gstate = PyGILState_Ensure();
-
-        PyObject* pyContext = static_cast<PyObject *>(inContext);
-        PyObject* pyRetVal = PyObject_CallFunctionObjArgs(pyContext, nullptr);
-        if (pyRetVal == nullptr) {
-            PyErr_Format(PyExc_ValueError, "unable to call the callback");
-            return EDS_ERR_INVALID_FN_POINTER;
-        }
-        unsigned long retVal(PyLong_AsUnsignedLong(pyRetVal));
-        Py_DECREF(pyRetVal);
-
-        PyGILState_Release(gstate);
-        return retVal;
-    };
-
-    unsigned long retVal(
-        EdsSetCameraAddedHandler(
-            callbackWrapper,
-            pyCameraAddedCallback));
-
-    if (retVal != EDS_ERR_OK) {
-        Py_DECREF(pyCameraAddedCallback);
-        PyCheck_EDSERROR(retVal);
-    }
-    Py_RETURN_NONE;
-}
-
+/******************************************************************************
+*******************************************************************************
+//
+//  Property operating functions
+//
+*******************************************************************************
+******************************************************************************/
 
 PyDoc_STRVAR(PyEds_GetPropertySize__doc__,
 "Gets the byte size and data type of a designated property\n"
 "\tfrom a camera object or image object.\n\n"
-":param PyEdsObject camera_or_image: the item object.\n"
+":param EdsObject camera_or_image: the item object.\n"
 ":param PropID property_id: The property ID.\n"
 ":param int param: Specify an index in case there are two or\n"
 "\tmore values over the same ID, defaults to 0.\n"
@@ -695,7 +321,7 @@ static PyObject* PyEds_GetPropertySize(PyObject *Py_UNUSED(self), PyObject *args
 
 PyDoc_STRVAR(PyEds_GetPropertyData__doc__,
 "Gets property information from the designated object.\n\n"
-":param PyEdsObject camera_or_image: The reference of the item.\n"
+":param EdsObject camera_or_image: The reference of the item.\n"
 ":param PropID property_id: The PropertyID.\n"
 ":param int param: Specify an index in case there are two or\n"
 "\tmore values over the same ID, defaults to 0.\n"
@@ -906,10 +532,10 @@ static PyObject* PyEds_GetPropertyData(PyObject *Py_UNUSED(self), PyObject *args
 
 PyDoc_STRVAR(PyEds_SetPropertyData__doc__,
 "Sets property data for the designated object.\n\n"
-":param PyEdsObject camera_or_image: The item object.\n"
+":param EdsObject camera_or_image: The item object.\n"
 ":param PropID property_id: The PropertyID.\n"
 ":param int param: Specify an index in case there are two or\n"
-"\tmore values over the same ID.\n",
+"\tmore values over the same ID.\n"
 ":param Any data: The data to set.\n"
 ":raises EdsError: Any of the sdk errors.");
 
@@ -933,8 +559,8 @@ static PyObject* PyEds_SetPropertyData(PyObject *Py_UNUSED(self), PyObject *args
     PyCheck_EDSERROR(retVal);
 
     uint8_t *propertyData = nullptr;
-    if (EdsDataTypeSize.count(dataType)){
-        propertyData = new (std::nothrow) uint8_t[EdsDataTypeSize.at(dataType)];
+    if (EDS::DataTypeSize.count(dataType)){
+        propertyData = new (std::nothrow) uint8_t[EDS::DataTypeSize.at(dataType)];
     }
     switch (dataType){
         case kEdsDataType_Bool: {
@@ -969,7 +595,7 @@ static PyObject* PyEds_SetPropertyData(PyObject *Py_UNUSED(self), PyObject *args
             return nullptr;
         }
         unsigned long uLongVal = PyLong_AsUnsignedLong(pyPropertyData);
-        memcpy_s(propertyData, EdsDataTypeSize.at(dataType), &uLongVal, sizeof(unsigned long));
+        memcpy_s(propertyData, EDS::DataTypeSize.at(dataType), &uLongVal, sizeof(unsigned long));
         break;
     }
     case kEdsDataType_UInt64: {
@@ -979,7 +605,7 @@ static PyObject* PyEds_SetPropertyData(PyObject *Py_UNUSED(self), PyObject *args
             return nullptr;
         }
         unsigned long long uLongLongVal = PyLong_AsUnsignedLongLong(pyPropertyData);
-        memcpy_s(propertyData, EdsDataTypeSize.at(dataType), &uLongLongVal, sizeof(unsigned long long));
+        memcpy_s(propertyData, EDS::DataTypeSize.at(dataType), &uLongLongVal, sizeof(unsigned long long));
         break;
     }
     case kEdsDataType_Int8:
@@ -991,7 +617,7 @@ static PyObject* PyEds_SetPropertyData(PyObject *Py_UNUSED(self), PyObject *args
             return nullptr;
         }
         long longVal = PyLong_AsLong(pyPropertyData);
-        memcpy_s(propertyData, EdsDataTypeSize.at(dataType), &longVal, sizeof(long));
+        memcpy_s(propertyData, EDS::DataTypeSize.at(dataType), &longVal, sizeof(long));
         break;
     }
     case kEdsDataType_Int64: {
@@ -1001,7 +627,7 @@ static PyObject* PyEds_SetPropertyData(PyObject *Py_UNUSED(self), PyObject *args
             return nullptr;
         }
         long long longLongVal = PyLong_AsLongLong(pyPropertyData);
-        memcpy_s(propertyData, EdsDataTypeSize.at(dataType), &longLongVal, sizeof(long long));
+        memcpy_s(propertyData, EDS::DataTypeSize.at(dataType), &longLongVal, sizeof(long long));
         break;
     }
     case kEdsDataType_Float:
@@ -1012,7 +638,7 @@ static PyObject* PyEds_SetPropertyData(PyObject *Py_UNUSED(self), PyObject *args
             return nullptr;
         }
         double doubleVal = PyFloat_AsDouble(pyPropertyData);
-        memcpy_s(propertyData, EdsDataTypeSize.at(dataType), &doubleVal, sizeof(double));
+        memcpy_s(propertyData, EDS::DataTypeSize.at(dataType), &doubleVal, sizeof(double));
         break;
     }
     case kEdsDataType_Rational: {
@@ -1079,13 +705,86 @@ static PyObject* PyEds_SetPropertyData(PyObject *Py_UNUSED(self), PyObject *args
 }
 
 
+PyDoc_STRVAR(PyEds_GetPropertyDesc__doc__,
+"Gets a list of property data that can be set for the object\n"
+"\tdesignated in inRef, as well as maximum and minimum values.\n"
+"This API is intended for only some shooting-related properties.\n\n"
+":param EdsObject camera: The camera item.\n"
+":param PropID property_id: The Property ID.\n"
+":raises EdsError: Any of the sdk errors.\n"
+":return Dict[str: Any]: The values which can be set up.");
+
+static PyObject* PyEds_GetPropertyDesc(PyObject *Py_UNUSED(self), PyObject *args){
+    PyObject* pyCam;
+    unsigned long propertyID;
+    if (!PyArg_ParseTuple(args, "Ok:EdsSetObjectEventHandler", &pyCam, &propertyID)) {
+        return nullptr;
+    }
+
+    PyEdsObject* edsObj = PyToEds(pyCam);
+    if (!edsObj) {
+        return nullptr;
+    }
+
+    EdsPropertyDesc propertyDesc;
+    EdsError retVal = EdsGetPropertyDesc(edsObj->edsObj, propertyID, &propertyDesc);
+    PyCheck_EDSERROR(retVal);
+
+    PyObject *pyForm = PyLong_FromLong(propertyDesc.form);
+    PyObject *pyAccess = PyLong_FromLong(propertyDesc.access);
+    PyObject *pyPropDesc = PyTuple_New(propertyDesc.numElements);
+    for (int i=0; i < propertyDesc.numElements; i++) {
+        PyTuple_SetItem(pyPropDesc, i, PyLong_FromLong(propertyDesc.propDesc[i]));
+    }
+
+    PyObject *pyPropertyDesc = PyDict_New();
+    PyDict_SetItemString(pyPropertyDesc, "form", pyForm);
+    PyDict_SetItemString(pyPropertyDesc, "access", pyAccess);
+    PyDict_SetItemString(pyPropertyDesc, "propDesc", pyPropDesc);
+
+    Py_DECREF(pyForm);
+    Py_DECREF(pyAccess);
+    Py_DECREF(pyPropDesc);
+    return pyPropertyDesc;
+}
+
+
+/******************************************************************************
+*******************************************************************************
+//
+//  Device-list and device operating functions
+//
+*******************************************************************************
+******************************************************************************/
+
+PyDoc_STRVAR(PyEds_GetCameraList__doc__,
+"Gets camera list objects.\n\n"
+":raises EdsError: Any of the sdk errors.\n"
+":return EdsObject: the camera-list.");
+
+static PyObject* PyEds_GetCameraList(PyObject *Py_UNUSED(self)) {
+    EdsCameraListRef cameraList;
+    unsigned long retVal(EdsGetCameraList(&cameraList));
+    PyCheck_EDSERROR(retVal);
+    return PyEdsObject_New(cameraList);
+}
+
+
+/******************************************************************************
+*******************************************************************************
+//
+//  Camera operating functions
+//
+*******************************************************************************
+******************************************************************************/
+
 PyDoc_STRVAR(PyEds_GetDeviceInfo__doc__,
 "Gets device information, such as the device name.\n"
 "Because device information of remote cameras is stored\n"
 "\ton the host computer, you can use this API\n"
 "\tbefore the camera object initiates communication\n"
 "\t(that is, before a session is opened).\n\n"
-":param PyEdsObject camera: The camera object.\n"
+":param EdsObject camera: The camera object.\n"
 ":raises EdsError: Any of the sdk errors.\n"
 ":return Dict[str, Any]: The device information.");
 
@@ -1120,6 +819,97 @@ static PyObject* PyEds_GetDeviceInfo(PyObject *Py_UNUSED(self), PyObject *cam){
 }
 
 
+PyDoc_STRVAR(PyEds_OpenSession__doc__,
+"Establishes a logical connection with a remote camera.\n"
+"Use this API after getting the camera's EdsCamera object.\n\n"
+":param EdsObject camera: the camera.\n"
+":raises EdsError: Any of the sdk errors.");
+
+static PyObject* PyEds_OpenSession(PyObject *Py_UNUSED(self), PyObject *args) {
+    PyObject* pyObj;
+    if (!PyArg_ParseTuple(args, "O:EdsOpenSession", &pyObj)) {
+        return nullptr;
+    }
+    PyEdsObject* edsObj = PyToEds(pyObj);
+    if (!edsObj) {
+        return nullptr;
+    }
+    unsigned long retVal(EdsOpenSession(edsObj->edsObj));
+    PyCheck_EDSERROR(retVal);
+    Py_RETURN_NONE;
+}
+
+
+PyDoc_STRVAR(PyEds_CloseSession__doc__,
+"Closes a logical connection with a remote camera.\n\n"
+":param EdsObject camera: the camera.\n"
+":raises EdsError: Any of the sdk errors.");
+
+static PyObject* PyEds_CloseSession(PyObject *Py_UNUSED(self), PyObject *args) {
+    PyObject* pyObj;
+    if (!PyArg_ParseTuple(args, "O:EdsCloseSession", &pyObj)) {
+        return nullptr;
+    }
+    PyEdsObject* edsObj = PyToEds(pyObj);
+    if (!edsObj) {
+        return nullptr;
+    }
+    unsigned long retVal(EdsCloseSession(edsObj->edsObj));
+    PyCheck_EDSERROR(retVal);
+    Py_RETURN_NONE;
+}
+
+
+PyDoc_STRVAR(PyEds_SendCommand__doc__,
+"Sends a command such as \"Shoot\" to a remote camera.\n\n"
+":param EdsObject camera: The camera object.\n"
+":param CameraCommand command: Specifies the command to be sent.\n"
+":param int param: Specifies additional command-specific information\n,"
+"\tdefaults to 0.\n"
+":raises EdsError: Any of the sdk errors.");
+
+static PyObject* PyEds_SendCommand(PyObject *Py_UNUSED(self), PyObject *args){
+    PyObject* pyCam;
+    unsigned long command;
+    long param = 0;
+    if (!PyArg_ParseTuple(args, "Okl:EdsSendCommand", &pyCam, &command, &param)) {
+        return nullptr;
+    }
+    PyEdsObject* cam(PyToEds(pyCam));
+    if (cam == nullptr) {
+        return nullptr;
+    }
+    unsigned long retVal(EdsSendCommand(cam->edsObj, command, param));
+    PyCheck_EDSERROR(retVal);
+    Py_RETURN_NONE;
+}
+
+
+PyDoc_STRVAR(PyEds_SendStatusCommand__doc__,
+"Sets the remote camera state or mode.\n\n"
+":param EdsObject camera: The camera object.\n"
+":param CameraStatusCommand command: Specifies the command to be sent.\n"
+":param int param: Specifies additional command-specific information\n,"
+"\tdefaults to 0.\n"
+":raises EdsError: Any of the sdk errors.");
+
+static PyObject* PyEds_SendStatusCommand(PyObject *Py_UNUSED(self), PyObject *args){
+    PyObject* pyCam;
+    unsigned long command;
+    long param = 0;
+    if (!PyArg_ParseTuple(args, "Okl:EdsSendStatusCommand", &pyCam, &command, &param)) {
+        return nullptr;
+    }
+    PyEdsObject* cam(PyToEds(pyCam));
+    if (cam == nullptr) {
+        return nullptr;
+    }
+    unsigned long retVal(EdsSendStatusCommand(cam->edsObj, command, param));
+    PyCheck_EDSERROR(retVal);
+    Py_RETURN_NONE;
+}
+
+
 PyDoc_STRVAR(PyEds_SetCapacity__doc__,
 "Sets the remaining HDD capacity on the host computer\n"
 "\t(excluding the portion from image transfer),\n"
@@ -1132,7 +922,7 @@ PyDoc_STRVAR(PyEds_SetCapacity__doc__,
 "For these cameras, after the storage destination is set to the computer,\n"
 "\tuse this API to notify the camera of the available disk capacity\n"
 "\tof the host computer.\n\n"
-":param PyEdsObject camera: The camera object.\n"
+":param EdsObject camera: The camera object.\n"
 ":param Dict[str, Any] capacity: The remaining capacity of a transmission place.\n"
 ":raises EdsError: Any of the sdk errors.");
 
@@ -1166,35 +956,83 @@ static PyObject* PyEds_SetCapacity(PyObject *Py_UNUSED(self), PyObject *args){
 }
 
 
-PyDoc_STRVAR(PyEds_SendCommand__doc__,
-"Sends a command such as \"Shoot\" to a remote camera.\n\n"
-":param PyEdsObject camera: The camera object.\n"
-":param CameraCommand command: Specifies the command to be sent.\n"
-":param int param: Specifies additional command-specific information\n,"
-"\tdefaults to 0.\n"
-":raises EdsError: Any of the sdk errors.");
+PyDoc_STRVAR(PyEds_GetVolumeInfo__doc__,
+"Gets volume information for a memory card in the camera.\n\n"
+":param EdsObject volume: The volume item.\n"
+":raises EdsError: Any of the sdk errors.\n"
+":return Dict[str, Any]: Information of the volume.");
 
-static PyObject* PyEds_SendCommand(PyObject *Py_UNUSED(self), PyObject *args){
-    PyObject* pyCam;
-    unsigned long command;
-    long param = 0;
-    if (!PyArg_ParseTuple(args, "Okl:EdsSendCommand", &pyCam, &command, &param)) {
+static PyObject* PyEds_GetVolumeInfo(PyObject *Py_UNUSED(self), PyObject *pyVolume){
+    PyEdsObject* volume(PyToEds(pyVolume));
+    if (volume == nullptr) {
         return nullptr;
     }
-    PyEdsObject* cam(PyToEds(pyCam));
-    if (cam == nullptr) {
-        return nullptr;
-    }
-    unsigned long retVal(EdsSendCommand(cam->edsObj, command, param));
+    EdsVolumeInfo volumeInfo;
+    unsigned long retVal(EdsGetVolumeInfo(volume->edsObj, &volumeInfo));
     PyCheck_EDSERROR(retVal);
+
+    PyObject *pyStorageType = GetEnum("constants", "StorageType", volumeInfo.storageType);
+    if (pyStorageType == nullptr) {
+        PyErr_Clear();
+        std::cout << "Unknown StorageType: " << volumeInfo.storageType << std::endl;
+        pyStorageType = PyLong_FromUnsignedLong(volumeInfo.storageType);
+    }
+    PyObject *pyAccess = GetEnum("constants", "Access", volumeInfo.access);
+    if (pyAccess == nullptr) {
+        PyErr_Clear();
+        std::cout << "Unknown StorageType: " << volumeInfo.access << std::endl;
+        pyAccess = PyLong_FromUnsignedLong(volumeInfo.access);
+    }
+    PyObject *pyMaxCapacity = PyLong_FromUnsignedLongLong(volumeInfo.maxCapacity);
+    PyObject *pyFreeSpaceInBytes = PyLong_FromUnsignedLongLong(volumeInfo.freeSpaceInBytes);
+    PyObject *pySzVolumeLabel = PyUnicode_DecodeFSDefault(volumeInfo.szVolumeLabel);
+
+    PyObject* pyVolumeInfo(PyDict_New());
+    PyDict_SetItemString(pyVolumeInfo, "storageType", pyStorageType);
+    PyDict_SetItemString(pyVolumeInfo, "access", pyAccess);
+    PyDict_SetItemString(pyVolumeInfo, "maxCapacity", pyMaxCapacity);
+    PyDict_SetItemString(pyVolumeInfo, "freeSpaceInBytes", pyFreeSpaceInBytes);
+    PyDict_SetItemString(pyVolumeInfo, "szVolumeLabel", pySzVolumeLabel);
+
+    Py_DECREF(pyStorageType);
+    Py_DECREF(pyAccess);
+    Py_DECREF(pyMaxCapacity);
+    Py_DECREF(pyFreeSpaceInBytes);
+    Py_DECREF(pySzVolumeLabel);
+
+    return pyVolumeInfo;
+}
+
+
+PyDoc_STRVAR(PyEds_FormatVolume__doc__,
+"Formats volumes of memory cards in a camera.\n\n"
+":param EdsObject volume: The volume item.\n"
+":raises EdsError: Any of the sdk errors.\n");
+
+static PyObject* PyEds_FormatVolume(PyObject *Py_UNUSED(self), PyObject *pyVolume){
+    PyEdsObject* volume(PyToEds(pyVolume));
+    if (volume == nullptr) {
+        return nullptr;
+    }
+    unsigned long retVal(EdsFormatVolume(volume->edsObj));
+    PyCheck_EDSERROR(retVal);
+
     Py_RETURN_NONE;
 }
 
 
+/******************************************************************************
+*******************************************************************************
+//
+//  Directory-item operating functions
+//
+*******************************************************************************
+******************************************************************************/
+
 PyDoc_STRVAR(PyEds_GetDirectoryItemInfo__doc__,
 "Gets information about the directory or file objects\n"
 "\ton the memory card (volume) in a remote camera.\n\n"
-":param PyEdsObject dir_item: The reference of the directory item.\n"
+":param EdsObject dir_item: The reference of the directory item.\n"
 ":raises EdsError: Any of the sdk errors.\n"
 ":return Dict[str, Any]: Information of the directory item.");
 
@@ -1233,6 +1071,194 @@ static PyObject* PyEds_GetDirectoryItemInfo(PyObject *Py_UNUSED(self), PyObject 
 }
 
 
+PyDoc_STRVAR(PyEds_DeleteDirectoryItem__doc__,
+"Deletes a camera folder or file.\n"
+"If folders with subdirectories are designated, all files are deleted\n"
+"\texcept protected files.\n"
+"EdsDirectoryItem objects deleted by means of this API are implicitly\n"
+"\treleased by the EDSDK.\n\n"
+":param EdsObject dir_item: The directory item.\n"
+":raises EdsError: Any of the sdk errors.\n");
+
+static PyObject* PyEds_DeleteDirectoryItem(PyObject *Py_UNUSED(self), PyObject *pyDirItem){
+    PyEdsObject* dirItem(PyToEds(pyDirItem));
+    if (dirItem == nullptr) {
+        return nullptr;
+    }
+    unsigned long retVal(EdsDeleteDirectoryItem(dirItem->edsObj));
+    PyCheck_EDSERROR(retVal);
+
+    Py_RETURN_NONE;
+}
+
+
+PyDoc_STRVAR(PyEds_Download__doc__,
+"Downloads a file on a remote camera\n"
+"\t(in the camera memory or on a memory card) to the host computer.\n"
+"The downloaded file is sent directly to a file stream created in advance.\n"
+"When dividing the file being retrieved, call this API repeatedly.\n"
+"Also in this case, make the data block size a multiple of 512 (bytes),\n"
+"\texcluding the final block.\n\n"
+":param EdsObject dir_item: The directory item.\n"
+":param int size: The number of bytes to be retrieved.\n"
+":param EdsObject stream: The stream.\n"
+":raises EdsError: Any of the sdk errors.");
+
+
+static PyObject* PyEds_Download(PyObject *Py_UNUSED(self), PyObject *args) {
+    PyObject *pyDirItemRef;
+    unsigned long long readSize;
+    PyObject *pyFileStream;
+    if (!PyArg_ParseTuple(args, "OkO:EdsDownload", &pyDirItemRef, &readSize, &pyFileStream)) {
+        return nullptr;
+    }
+    PyEdsObject* dirItem(PyToEds(pyDirItemRef));
+    if (dirItem == nullptr) {
+        return nullptr;
+    }
+    PyEdsObject* fileStream(PyToEds(pyFileStream));
+    if (fileStream == nullptr) {
+        return nullptr;
+    }
+    unsigned long retVal(EdsDownload(dirItem->edsObj, readSize, fileStream->edsObj));
+    PyCheck_EDSERROR(retVal);
+
+    Py_RETURN_NONE;
+}
+
+
+PyDoc_STRVAR(PyEds_DownloadCancel__doc__,
+"Must be executed when downloading of a directory item is canceled.\n"
+"Calling this API makes the camera cancel file transmission\n"
+"It also releases resources.\n"
+"\tThis operation need not be executed when using EdsDownloadThumbnail.\n\n"
+":param EdsObject dir_item: The directory item.\n"
+":raises EdsError: Any of the sdk errors.");
+
+static PyObject* PyEds_DownloadCancel(PyObject *Py_UNUSED(self), PyObject *pyDirItem){
+    PyEdsObject* dirItem(PyToEds(pyDirItem));
+    if (dirItem == nullptr) {
+        return nullptr;
+    }
+    unsigned long retVal(EdsDownloadCancel(dirItem->edsObj));
+    PyCheck_EDSERROR(retVal);
+
+    Py_RETURN_NONE;
+}
+
+
+PyDoc_STRVAR(PyEds_DownloadComplete__doc__,
+"Must be called when downloading of directory items is complete.\n"
+"\tExecuting this API makes the camera\n"
+"\t\trecognize that file transmission is complete.\n"
+"\tThis operation need not be executed when using EdsDownloadThumbnail.\n\n"
+":param EdsObject dir_item: The directory item.\n"
+":raises EdsError: Any of the sdk errors.");
+
+static PyObject* PyEds_DownloadComplete(PyObject *Py_UNUSED(self), PyObject *pyDirItem){
+    PyEdsObject* dirItem(PyToEds(pyDirItem));
+    if (dirItem == nullptr) {
+        return nullptr;
+    }
+    unsigned long retVal(EdsDownloadComplete(dirItem->edsObj));
+    PyCheck_EDSERROR(retVal);
+
+    Py_RETURN_NONE;
+}
+
+
+PyDoc_STRVAR(PyEds_DownloadThumbnail__doc__,
+"Extracts and downloads thumbnail information from image files in a camera.\n"
+"Thumbnail information in the camera's image files is downloaded\n"
+"\tto the host computer.\n"
+"Downloaded thumbnails are sent directly to a file stream created in advance.\n\n"
+":param EdsObject dir_item: The directory item.\n"
+":raises EdsError: Any of the sdk errors.\n"
+":return EdsObject: The stream.\n");
+
+static PyObject* PyEds_DownloadThumbnail(PyObject *Py_UNUSED(self), PyObject *args) {
+    PyObject *pyDirItemRef;
+    PyObject *pyFileStream;
+    if (!PyArg_ParseTuple(args, "OkO:EdsDownloadThumbnail", &pyDirItemRef, &pyFileStream)) {
+        return nullptr;
+    }
+    PyEdsObject* dirItem(PyToEds(pyDirItemRef));
+    if (dirItem == nullptr) {
+        return nullptr;
+    }
+    PyEdsObject* fileStream(PyToEds(pyFileStream));
+    if (fileStream == nullptr) {
+        return nullptr;
+    }
+    unsigned long retVal(EdsDownloadThumbnail(dirItem->edsObj, fileStream->edsObj));
+    PyCheck_EDSERROR(retVal);
+
+    Py_RETURN_NONE;
+}
+
+
+PyDoc_STRVAR(PyEds_GetAttribute__doc__,
+"Gets attributes of files on a camera.\n\n"
+":param EdsObject dir_item: The directory item.\n"
+":raises EdsError: Any of the sdk errors.\n"
+":return int: Indicates the file attributes.\n"
+"\tAs for the file attributes, OR values of the value defined\n"
+"\tby enum EdsFileAttributes can be retrieved. Thus, when\n"
+"\tdetermining the file attributes, you must check\n"
+"\tif an attribute flag is set for target attributes.");
+
+static PyObject* PyEds_GetAttribute(PyObject *Py_UNUSED(self), PyObject *pyDirItem){
+    PyEdsObject* dirItem(PyToEds(pyDirItem));
+    if (dirItem == nullptr) {
+        return nullptr;
+    }
+    EdsFileAttributes attr;
+
+    EdsError retVal = EdsGetAttribute(dirItem->edsObj, &attr);
+    PyCheck_EDSERROR(retVal);
+
+    return PyLong_FromUnsignedLong(attr);
+}
+
+
+PyDoc_STRVAR(PyEds_SetAttribute__doc__,
+"Changes attributes of files on a camera.\n\n"
+":param EdsObject dir_item: The directory item.\n"
+":param int file_attributes: Indicates the file attributes.\n"
+"\tAs for the file attributes, OR values of the value\n"
+"\tdefined by enum FileAttributes can be retrieved.\n"
+":raises EdsError: Any of the sdk errors.");
+
+static PyObject* PyEds_SetAttribute(PyObject *Py_UNUSED(self), PyObject *args){
+    PyObject* pyDirItem;
+    unsigned long fileAttribute;
+
+    if (!PyArg_ParseTuple(args, "Ok:EdsSetAttribute", &pyDirItem, &fileAttribute)) {
+        return nullptr;
+    }
+
+    PyEdsObject* dirItem(PyToEds(pyDirItem));
+    if (dirItem == nullptr) {
+        return nullptr;
+    }
+
+    EdsError retVal(EdsSetAttribute(
+        dirItem->edsObj, static_cast<EdsFileAttributes>(fileAttribute)));
+    PyCheck_EDSERROR(retVal);
+
+    Py_RETURN_NONE;
+}
+
+
+/******************************************************************************
+*******************************************************************************
+//
+//  Stream operating functions
+//
+*******************************************************************************
+******************************************************************************/
+
+
 PyDoc_STRVAR(PyEds_CreateFileStream__doc__,
 "Creates a new file on a host computer (or opens an existing file)\n"
 "\tand creates a file stream for access to the file.\n"
@@ -1243,7 +1269,7 @@ PyDoc_STRVAR(PyEds_CreateFileStream__doc__,
 ":param FileCreateDisposition disposition: Action to take on files that exist or not.\n"
 ":param Access access: Access to the stream (reading, writing, or both).\n"
 ":raises EdsError: Any of the sdk errors.\n"
-":return PyEdsObject: The reference of the stream.");
+":return EdsObject: The stream.");
 
 static PyObject* PyEds_CreateFileStream(PyObject *Py_UNUSED(self), PyObject *args){
     PyObject* pyFilename;
@@ -1279,85 +1305,829 @@ static PyObject* PyEds_CreateFileStream(PyObject *Py_UNUSED(self), PyObject *arg
     return pyFileStream;
 }
 
-PyDoc_STRVAR(PyEds_Download__doc__,
-"Downloads a file on a remote camera\n"
-"\t(in the camera memory or on a memory card) to the host computer.\n"
-"The downloaded file is sent directly to a file stream created in advance.\n"
-"When dividing the file being retrieved, call this API repeatedly.\n"
-"Also in this case, make the data block size a multiple of 512 (bytes),\n"
-"\texcluding the final block.\n\n"
-":param PyEdsObject dir_item: The directory item.\n"
-":param int size: The number of bytes to be retrieved.\n"
-":param PyEdsObject stream: The stream.\n"
+
+PyDoc_STRVAR(PyEds_CreateMemoryStream__doc__,
+"Creates a stream in the memory of a host computer.\n"
+"In the case of writing in excess of the allocated buffer size,\n"
+"\tthe memory is automatically extended.\n\n"
+":param int buffer_size: The number of bytes of the memory to allocate.\n"
+":raises EdsError: Any of the sdk errors.\n"
+":return EdsObject: The stream.");
+
+static PyObject* PyEds_CreateMemoryStream(PyObject *Py_UNUSED(self), PyObject *pyBufferSize){
+    if (!PyLong_Check(pyBufferSize)) {
+        PyErr_SetString(PyExc_TypeError, "buffer_size parameter must be an integer");
+        return nullptr;
+    }
+
+    EdsStreamRef fileStream;
+    unsigned long retVal(EdsCreateMemoryStream(
+        PyLong_AsUnsignedLongLong(pyBufferSize), &fileStream));
+    PyCheck_EDSERROR(retVal);
+
+    PyObject *pyFileStream = PyEdsObject_New(fileStream);
+    assert(pyFileStream);
+    return pyFileStream;
+}
+
+
+PyDoc_STRVAR(PyEds_CreateFileStreamEx__doc__,
+"An extended version of EdsCreateStreamFromFile.\n"
+"Use this function when working with Unicode file names.\n\n"
+":param str filename: the file name.\n"
+":param FileCreateDisposition disposition: Action to take on files that exist or not.\n"
+":param Access access: Access to the stream (reading, writing, or both).\n"
+":raises EdsError: Any of the sdk errors.\n"
+":return EdsObject: The stream.");
+
+static PyObject* PyEds_CreateFileStreamEx(PyObject *Py_UNUSED(self), PyObject *args){
+    PyObject* pyFilename;
+    unsigned long createDisposition;
+    unsigned long desiredAccess;
+
+    if (!PyArg_ParseTuple(args, "Okk:CreateFileStreamEx", &pyFilename, &createDisposition, &desiredAccess)) {
+        return nullptr;
+    }
+
+    if (!PyUnicode_Check(pyFilename) || PyUnicode_GET_LENGTH(pyFilename) == 0) {
+        PyErr_SetString(PyExc_TypeError, "filename parameter must be a non-empty string");
+        return nullptr;
+    }
+
+    Py_ssize_t filenameLen(PyUnicode_GET_LENGTH(pyFilename));
+    wchar_t *filenameEncoded(new (std::nothrow) wchar_t[filenameLen + 1]);
+    if (filenameEncoded == nullptr) {
+        PyErr_SetString(PyExc_MemoryError, "Could not allocate memory for filename");
+        return nullptr;
+    }
+
+    Py_ssize_t nrBytesCopied(PyUnicode_AsWideChar(
+        pyFilename, filenameEncoded, filenameLen));
+    filenameEncoded[filenameLen] = L'\0';
+    if (nrBytesCopied == -1) {
+        PyErr_SetString(PyExc_ValueError, "Could not convert filename to wide character string");
+        delete[] filenameEncoded;
+        return nullptr;
+    }
+
+    EdsStreamRef fileStream;
+    unsigned long retVal(EdsCreateFileStreamEx(
+        filenameEncoded,
+        static_cast<EdsFileCreateDisposition>(createDisposition),
+        static_cast<EdsAccess>(desiredAccess),
+        &fileStream));
+
+    delete[] filenameEncoded;
+    PyCheck_EDSERROR(retVal);
+
+    PyObject *pyFileStream = PyEdsObject_New(fileStream);
+    assert(pyFileStream);
+    return pyFileStream;
+}
+
+PyDoc_STRVAR(PyEds_CreateMemoryStreamFromPointer__doc__,
+"Creates a stream from the memory buffer you prepare.\n"
+"Unlike the buffer size of streams created by means of EdsCreateMemoryStream,\n"
+"the buffer size you prepare for streams created this way does not expand.\n\n"
+":param Union[bytes, bytearray, memoryview] buffer: The buffer.\n"
+":raises EdsError: Any of the sdk errors.\n"
+":return EdsObject: The stream.");
+
+static PyObject* PyEds_CreateMemoryStreamFromPointer(PyObject *Py_UNUSED(self), PyObject *pyBufferLike){
+    void * bufferPtr = nullptr;
+    Py_ssize_t bufferLen = 0;
+
+    std::cout << "PyEds_CreateMemoryStreamFromPointer" << std::endl;
+    if (PyMemoryView_Check(pyBufferLike)) {
+        std::cout << "PyMemoryView_Check" << std::endl;
+        Py_buffer *pyBuffer = PyMemoryView_GET_BUFFER(pyBufferLike);
+        if (pyBuffer->readonly) {
+            PyErr_SetString(PyExc_ValueError, "Buffer is read-only");
+            return nullptr;
+        }
+        std::cout << "PyMemoryView_GET_BUFFER" << std::endl;
+        bufferPtr = pyBuffer->buf;
+        bufferLen = pyBuffer->len;
+    }
+    else if (PyBytes_Check(pyBufferLike)) {
+        std::cout << "PyBytes_Check" << std::endl;
+        bufferPtr = PyBytes_AS_STRING(pyBufferLike);
+        bufferLen = PyBytes_GET_SIZE(pyBufferLike);
+    }
+    else if (PyByteArray_Check(pyBufferLike)) {
+        std::cout << "PyByteArray_Check" << std::endl;
+        bufferPtr = PyByteArray_AS_STRING(pyBufferLike);
+        bufferLen = PyByteArray_GET_SIZE(pyBufferLike);
+    }
+    else {
+        PyErr_SetString(PyExc_TypeError, "buffer parameter must be a bytes, bytearray, or memoryview");
+        return nullptr;
+    }
+    std::cout << "Py_buffer" << std::endl;
+    EdsStreamRef fileStream;
+
+    unsigned long retVal(EdsCreateMemoryStreamFromPointer(
+        bufferPtr, bufferLen, &fileStream));
+    std::cout << "EdsCreateMemoryStreamFromPointer" << std::endl;
+    PyCheck_EDSERROR(retVal);
+
+    PyObject *pyFileStream = PyEdsObject_New(fileStream);
+    assert(pyFileStream);
+    return pyFileStream;
+}
+
+
+PyDoc_STRVAR(PyEds_GetPosition__doc__,
+"Gets the current read or write position of the stream\n"
+"\t(that is, the file position indicator).\n\n"
+":param EdsObject stream_or_image: The stream or image.\n"
+":raises EdsError: Any of the sdk errors.\n"
+":return int: The current stream pointer.");
+
+static PyObject* PyEds_GetPosition(PyObject *Py_UNUSED(self), PyObject *pyStream){
+    PyEdsObject *pyEdsObject(PyToEds(pyStream));
+    if (pyEdsObject == nullptr) {
+        return nullptr;
+    }
+    EdsUInt64 position;
+    unsigned long retVal(EdsGetPosition(pyEdsObject->edsObj, &position));
+    PyCheck_EDSERROR(retVal);
+
+    return PyLong_FromUnsignedLongLong(position);
+}
+
+
+PyDoc_STRVAR(PyEds_GetLength__doc__,
+"Gets the current read or write position of the stream.\n"
+"\t(that is, the file position indicator).\n\n"
+":param EdsObject stream_or_image: The stream or image.\n"
+":raises EdsError: Any of the sdk errors.\n"
+":return int: The length of the stream.");
+
+static PyObject* PyEds_GetLength(PyObject *Py_UNUSED(self), PyObject *pyStream){
+    PyEdsObject *pyEdsObject(PyToEds(pyStream));
+    if (pyEdsObject == nullptr) {
+        return nullptr;
+    }
+    EdsUInt64 length;
+    unsigned long retVal(EdsGetLength(pyEdsObject->edsObj, &length));
+    PyCheck_EDSERROR(retVal);
+
+    return PyLong_FromUnsignedLongLong(length);
+}
+
+
+PyDoc_STRVAR(PyEds_CopyData__doc__,
+"Copies data from the copy source stream to the copy destination stream.\n"
+"The read or write position of the data to copy is determined from\n"
+"\tthe current file read or write position of the respective stream.\n"
+"After this API is executed, the read or write positions of the copy source\n"
+"\tand copy destination streams are moved an amount corresponding to\n"
+"\tinWriteSize in the positive direction.\n\n"
+":param EdsObject in_stream_or_image: The input stream or image.\n"
+":param int write_size: The number of bytes to copy.\n"
+":param EdsObject out_stream_or_image: The output stream or image.");
+
+static PyObject* PyEds_CopyData(PyObject *Py_UNUSED(self), PyObject *args){
+    PyObject *pyInStream;
+    unsigned long long writeSize;
+    PyObject *pyOutStream;
+
+    if (!PyArg_ParseTuple(args, "OKO:CopyData", &pyInStream, &writeSize, &pyOutStream)) {
+        return nullptr;
+    }
+    PyEdsObject *pyInEdsObject(PyToEds(pyInStream));
+    PyEdsObject *pyOutEdsObject(PyToEds(pyOutStream));
+    if (pyInEdsObject == nullptr || pyOutEdsObject == nullptr) {
+        return nullptr;
+    }
+    unsigned long retVal(EdsCopyData(
+        pyInEdsObject->edsObj, writeSize, pyOutEdsObject->edsObj));
+    PyCheck_EDSERROR(retVal);
+    Py_RETURN_NONE;
+}
+
+
+static PyObject *pyProgressCallback = nullptr;
+
+PyDoc_STRVAR(PyEds_SetProgressCallback__doc__,
+"Register a progress callback function.\n"
+"An event is received as notification of progress during processing that\n"
+"\ttakes a relatively long time, such as downloading files from a\n"
+"\tremote camera.\n"
+"If you register the callback function, the EDSDK calls the callback\n"
+"\tfunction during execution or on completion of the following APIs.\n"
+"This timing can be used in updating on-screen progress bars, for example.\n\n"
+":param EdsObject stream_or_image: the stream or image object.\n"
+":param Callable callback: the callback function.\n"
+"\tExpected signature (percent: int, cancel: bool) -> int.\n"
+":param ProgressOption option: The option about progress is specified.\n"
+"\tMust be one of the following values.\n"
+"\t\tProgressOption.Done\n"
+"\t\t\tWhen processing is completed,a callback function\n"
+"\t\t\tis called only once.\n"
+"\t\tProgressOption.Periodically\n"
+"\t\t\tA callback function is performed periodically.\n"
 ":raises EdsError: Any of the sdk errors.");
 
+static PyObject* PyEds_SetProgressCallback(PyObject *Py_UNUSED(self), PyObject *args) {
+    PyObject* pyStreamOrImage;
+    PyObject* pyCallable;
+    unsigned long progressOption;
 
-static PyObject* PyEds_Download(PyObject *Py_UNUSED(self), PyObject *args) {
-    PyObject *pyDirItemRef;
-    unsigned long long readSize;
-    PyObject *pyFileStream;
-    if (!PyArg_ParseTuple(args, "OkO:EdsDownload", &pyDirItemRef, &readSize, &pyFileStream)) {
+    if (!PyArg_ParseTuple(args, "OOk:EdsSetProgressCallback", &pyStreamOrImage, &pyCallable, &progressOption)) {
         return nullptr;
     }
-    PyEdsObject* dirItem(PyToEds(pyDirItemRef));
-    if (dirItem == nullptr) {
+
+    PyEdsObject* edsObj = PyToEds(pyStreamOrImage);
+    if (!edsObj) {
         return nullptr;
     }
-    PyEdsObject* fileStream(PyToEds(pyFileStream));
-    if (fileStream == nullptr) {
+
+    if (pyCallable == Py_None || !PyCallable_Check(pyCallable)){
+        PyErr_Format(PyExc_ValueError, "expected a callable object");
         return nullptr;
     }
-    unsigned long retVal(EdsDownload(dirItem->edsObj, readSize, fileStream->edsObj));
+
+    if (!PyCallable_CheckNumberOfParameters(pyCallable, 2)) {
+        PyErr_Format(PyExc_ValueError, "expected a callable object with 2 parameters (inPercent: int, outCancel: bool) -> int");
+        return nullptr;
+    }
+
+    if (pyProgressCallback != nullptr) {
+        Py_DECREF(pyProgressCallback);
+    }
+
+    pyProgressCallback = pyCallable;
+
+    Py_INCREF(pyProgressCallback);
+
+    auto callbackWrapper = [](EdsUInt32 inPercent, EdsVoid *inContext, EdsBool *outCancel) -> EdsError {
+        PyGILState_STATE gstate;
+        gstate = PyGILState_Ensure();
+
+        PyObject* pyContext = static_cast<PyObject *>(inContext);
+        PyObject* pyPercent = PyLong_FromUnsignedLong(inPercent);
+        PyObject* pyCancel = PyBool_FromLong(*outCancel);
+
+        PyObject* pyRetVal = PyObject_CallFunctionObjArgs(pyContext, pyPercent, pyCancel, nullptr);
+        if (pyRetVal == nullptr) {
+            PyErr_Format(PyExc_ValueError, "unable to call the callback");
+            Py_DECREF(pyPercent);
+            Py_DECREF(pyCancel);
+            return EDS_ERR_INVALID_FN_POINTER;
+        }
+        unsigned long retVal(PyLong_AsUnsignedLong(pyRetVal));
+        Py_DECREF(pyRetVal);
+        Py_DECREF(pyPercent);
+        Py_DECREF(pyCancel);
+
+        PyGILState_Release(gstate);
+        return retVal;
+    };
+
+    unsigned long retVal(EdsSetProgressCallback(
+        edsObj->edsObj,
+        callbackWrapper,
+        static_cast<EdsProgressOption>(progressOption),
+        pyProgressCallback));
+
+    if (retVal != EDS_ERR_OK) {
+        Py_DECREF(pyProgressCallback);
+        PyCheck_EDSERROR(retVal);
+    }
+    Py_RETURN_NONE;
+}
+
+
+PyDoc_STRVAR(PyEds_CreateImageRef__doc__,
+"Creates an image object from an image file.\n"
+"Without modification, stream objects cannot be worked with as images.\n"
+"Thus, when extracting images from image files,\n"
+"\tyou must use this API to create image objects.\n"
+"The image object created this way can be used to get image information\n"
+"\t(such as the height and width, number of color components, and\n"
+"\tresolution), thumbnail image data, and the image data itself.\n\n"
+":param EdsObject stream: The stream.\n"
+":raises EdsError: Any of the sdk errors.\n"
+":return EdsObject: The image.");
+
+static PyObject* PyEds_CreateImageRef(PyObject *Py_UNUSED(self), PyObject *pyStream){
+    PyEdsObject *pyEdsObject(PyToEds(pyStream));
+    if (pyEdsObject == nullptr) {
+        return nullptr;
+    }
+    EdsImageRef outImage;
+    unsigned long retVal(EdsCreateImageRef(pyEdsObject->edsObj, &outImage));
+    PyCheck_EDSERROR(retVal);
+
+    PyObject *pyImage = PyEdsObject_New(outImage);
+    assert(pyImage);
+    return pyImage;
+}
+
+
+PyDoc_STRVAR(PyEds_GetImageInfo__doc__,
+"Gets image information from a designated image object.\n"
+"Here, image information means the image width and height,\n"
+"\tnumber of color components, resolution, and effective image area.\n\n"
+":param EdsObject image: The image.\n"
+":param ImageSource image_source: Of the various image data items in the image file,\n"
+"\tdesignate the type of image data representing the\n"
+"\tinformation you want to get. Designate the image as\n"
+"\tdefined in Enum ImageSource.\n"
+"\t\tImageSource.FullView\n"
+"\t\t\tThe image itself (a full-sized image)\n"
+"\t\tImageSource.Thumbnail\n"
+"\t\t\tA thumbnail image\n"
+"\t\tImageSource.Preview\n"
+"\t\t\tA preview image\n"
+":raises EdsError: Any of the sdk errors.\n"
+":return Dict[str, Any]: Stores the image data information designated\n"
+"\tin inImageSource.");
+
+static PyObject* PyEds_GetImageInfo(PyObject *Py_UNUSED(self), PyObject *args){
+    PyObject *pyImage;
+    unsigned long imageSource;
+
+    if (!PyArg_ParseTuple(args, "OK:GetImageInfo", &pyImage, &imageSource)) {
+        return nullptr;
+    }
+    PyEdsObject *pyEdsObject(PyToEds(pyImage));
+    if (pyEdsObject == nullptr) {
+        return nullptr;
+    }
+
+    EdsImageInfo imageInfo;
+    unsigned long retVal(EdsGetImageInfo(
+        pyEdsObject->edsObj, static_cast<EdsImageSource>(imageSource), &imageInfo));
+    PyCheck_EDSERROR(retVal);
+
+    PyObject *pyDirItemInfo = EDS::PyDict_FromEdsImageInfo(imageInfo);
+    return pyDirItemInfo;
+}
+
+
+PyDoc_STRVAR(PyEds_CreateEvfImageRef__doc__,
+"Creates an object used to get the live view image data set.\n\n"
+":param EdsObject stream: The stream which opened to get EVF JPEG image.\n"
+":raises EdsError: Any of the sdk errors.\n"
+":return EdsObject: The EVFData.");
+
+static PyObject* PyEds_CreateEvfImageRef(PyObject *Py_UNUSED(self), PyObject *pyStream){
+    PyEdsObject *pyEdsObject(PyToEds(pyStream));
+    if (pyEdsObject == nullptr) {
+        return nullptr;
+    }
+    EdsEvfImageRef outImage;
+    unsigned long retVal(EdsCreateEvfImageRef(pyEdsObject->edsObj, &outImage));
+    PyCheck_EDSERROR(retVal);
+
+    PyObject *pyImage = PyEdsObject_New(outImage);
+    assert(pyImage);
+    return pyImage;
+}
+
+
+PyDoc_STRVAR(PyEds_DownloadEvfImage__doc__,
+"Downloads the live view image data set for a camera currently in live view mode.\n"
+"Live view can be started by using the property ID:PropID.Evf_OutputDevice and\n"
+"data:OutputDevice.PC to call SetPropertyData.\n"
+"In addition to image data, information such as zoom, focus position, and histogram data\n"
+"is included in the image data set. Image data is saved in a stream maintained by EdsEvfImageRef.\n"
+"GetPropertyData can be used to get information such as the zoom, focus position, etc.\n"
+"Although the information of the zoom and focus position can be obtained from EvfImageRef,\n"
+"settings are applied to EdsCameraRef.\n\n"
+":param EdsObject camera: The camera.\n"
+":param EdsObject evf_image: The EVFData.\n"
+":raises EdsError: Any of the sdk errors.");
+
+static PyObject* PyEds_DownloadEvfImage(PyObject *Py_UNUSED(self), PyObject *args){
+    PyObject *pyCamera;
+    PyObject *pyEvfImage;
+    if (!PyArg_ParseTuple(args, "OO:DownloadEvfImage", &pyCamera, &pyEvfImage)) {
+        return nullptr;
+    }
+    PyEdsObject *pyEdsCamera(PyToEds(pyCamera));
+    PyEdsObject *pyEdsEvfImage(PyToEds(pyEvfImage));
+    if (pyEdsCamera == nullptr || pyEdsEvfImage == nullptr) {
+        return nullptr;
+    }
+
+    unsigned long retVal(EdsDownloadEvfImage(
+        pyEdsCamera->edsObj, pyEdsEvfImage->edsObj));
     PyCheck_EDSERROR(retVal);
 
     Py_RETURN_NONE;
 }
 
 
-PyDoc_STRVAR(PyEds_DownloadComplete__doc__,
-"Must be called when downloading of directory items is complete.\n"
-"\tExecuting this API makes the camera\n"
-"\t\trecognize that file transmission is complete.\n"
-"\tThis operation need not be executed when using EdsDownloadThumbnail.\n\n"
-":param PyEdsObject dir_item: The directory item.\n"
+static PyObject *pyCameraAddedCallback = nullptr;
+
+PyDoc_STRVAR(PyEds_SetCameraAddedHandler__doc__,
+"Registers a callback function for when a camera is detected.\n\n"
+":param Callable callback: the callback called when a camera is connected.\n"
+"\tExpected signature () -> int.\n"
 ":raises EdsError: Any of the sdk errors.");
 
-static PyObject* PyEds_DownloadComplete(PyObject *Py_UNUSED(self), PyObject *pyDirItem){
-    PyEdsObject* dirItem(PyToEds(pyDirItem));
-    if (dirItem == nullptr) {
+static PyObject* PyEds_SetCameraAddedHandler(PyObject *Py_UNUSED(self), PyObject *args) {
+    PyObject* pyCallable;
+    if (!PyArg_ParseTuple(args, "O:EdsSetCameraAddedHandler", &pyCallable)) {
         return nullptr;
     }
-    unsigned long retVal(EdsDownloadComplete(dirItem->edsObj));
-    PyCheck_EDSERROR(retVal);
 
+    if (pyCallable == Py_None || !PyCallable_Check(pyCallable)){
+        PyErr_Format(PyExc_ValueError, "expected a callable object");
+        return nullptr;
+    }
+
+    if (!PyCallable_CheckNumberOfParameters(pyCallable, 0)) {
+        PyErr_Format(PyExc_ValueError, "expected a callable object with 0 parameters");
+        return nullptr;
+    }
+
+    if (pyCameraAddedCallback != nullptr) {
+        Py_DECREF(pyCameraAddedCallback);
+    }
+    pyCameraAddedCallback = pyCallable;
+
+    Py_INCREF(pyCameraAddedCallback);
+
+    auto callbackWrapper = [](EdsVoid* inContext) -> EdsError {
+        PyGILState_STATE gstate;
+        gstate = PyGILState_Ensure();
+
+        PyObject* pyContext = static_cast<PyObject *>(inContext);
+        PyObject* pyRetVal = PyObject_CallFunctionObjArgs(pyContext, nullptr);
+        if (pyRetVal == nullptr) {
+            PyErr_Format(PyExc_ValueError, "unable to call the callback");
+            return EDS_ERR_INVALID_FN_POINTER;
+        }
+        unsigned long retVal(PyLong_AsUnsignedLong(pyRetVal));
+        Py_DECREF(pyRetVal);
+
+        PyGILState_Release(gstate);
+        return retVal;
+    };
+
+    unsigned long retVal(
+        EdsSetCameraAddedHandler(
+            callbackWrapper,
+            pyCameraAddedCallback));
+
+    if (retVal != EDS_ERR_OK) {
+        Py_DECREF(pyCameraAddedCallback);
+        PyCheck_EDSERROR(retVal);
+    }
+    Py_RETURN_NONE;
+}
+
+
+static PyObject *pySetPropertyCallback = nullptr;
+
+PyDoc_STRVAR(PyEds_SetPropertyEventHandler__doc__,
+"Registers a callback function for receiving status\n"
+"\tchange notification events for property states on a camera.\n\n"
+":param EdsObject camera: the camera object.\n"
+":param PropertyEvent event: the event to be supplemented.\n"
+"\tTo designate all events, use PropertyEvent.All.\n"
+":param Callable callback: the callback for receiving events.\n"
+"\tExpected signature (event: StateEvent, prop_id: PropID, param: int) -> int.\n"
+":raises EdsError: Any of the sdk errors.");
+
+static PyObject* PyEds_SetPropertyEventHandler(PyObject *Py_UNUSED(self), PyObject *args) {
+    PyObject* pyObj;
+    unsigned long event;
+    PyObject* pyCallable;
+
+    if (!PyArg_ParseTuple(args, "OkO:EdsSetPropertyEventHandler", &pyObj, &event, &pyCallable)) {
+        return nullptr;
+    }
+
+    PyEdsObject* edsObj = PyToEds(pyObj);
+    if (!edsObj) {
+        return nullptr;
+    }
+
+    if (pyCallable == Py_None || !PyCallable_Check(pyCallable)){
+        PyErr_Format(PyExc_ValueError, "expected a callable object");
+        return nullptr;
+    }
+
+    if (!PyCallable_CheckNumberOfParameters(pyCallable, 3)) {
+        PyErr_Format(PyExc_ValueError, "expected a callable object with 3 parameters (inEvent, inPropertyID, inParam)");
+        return nullptr;
+    }
+
+    if (pySetPropertyCallback != nullptr) {
+        Py_DECREF(pySetPropertyCallback);
+    }
+
+    pySetPropertyCallback = pyCallable;
+
+    Py_INCREF(pySetPropertyCallback);
+
+    auto callbackWrapper = [](EdsPropertyEvent inEvent, EdsPropertyID inPropertyID, EdsUInt32 inParam, EdsVoid* inContext) -> EdsError {
+
+        PyGILState_STATE gstate;
+        gstate = PyGILState_Ensure();
+
+        PyObject* pyContext = static_cast<PyObject *>(inContext);
+        PyObject* pyEvent = GetEnum("edsdk.constants", "PropertyEvent", inEvent);
+        if (pyEvent == nullptr) {
+            PyErr_Clear();
+            std::cout << "Unknown Property Event: " << inEvent  << std::endl;
+            pyEvent = PyLong_FromUnsignedLong(inEvent);
+        }
+        PyObject* pyPropertyID = GetEnum("edsdk.constants", "PropID", inPropertyID);
+        if (pyPropertyID == nullptr) {
+            PyErr_Clear();
+            std::cout << "Unknown Property ID: " << inPropertyID  << std::endl;
+            pyPropertyID = PyLong_FromUnsignedLong(inPropertyID);
+        }
+        PyObject* pyParam = PyLong_FromUnsignedLong(inParam);
+
+        PyObject* pyRetVal = PyObject_CallFunctionObjArgs(pyContext, pyEvent, pyPropertyID, pyParam, nullptr);
+        if (pyRetVal == nullptr) {
+            PyErr_Format(PyExc_ValueError, "unable to call the callback");
+            Py_DECREF(pyEvent);
+            Py_DECREF(pyPropertyID);
+            Py_DECREF(pyParam);
+            return EDS_ERR_INVALID_FN_POINTER;
+        }
+        unsigned long retVal(PyLong_AsUnsignedLong(pyRetVal));
+        Py_DECREF(pyRetVal);
+        Py_DECREF(pyEvent);
+        Py_DECREF(pyParam);
+        Py_DECREF(pyPropertyID);
+
+        PyGILState_Release(gstate);
+        return retVal;
+    };
+
+    unsigned long retVal(EdsSetPropertyEventHandler(edsObj->edsObj, event, callbackWrapper, pySetPropertyCallback));
+    if (retVal != EDS_ERR_OK) {
+        Py_DECREF(pySetPropertyCallback);
+        PyCheck_EDSERROR(retVal);
+    }
+    Py_RETURN_NONE;
+
+}
+
+
+static PyObject *pySetObjectCallback = nullptr;
+
+PyDoc_STRVAR(PyEds_SetObjectEventHandler__doc__,
+"Registers a callback function for receiving status\n"
+"\tchange notification events for objects on a remote camera\n"
+"Here, object means volumes representing memory cards, files and directories,\n"
+"\tand shot images stored in memory, in particular.\n\n"
+":param EdsObject camera: the camera object.\n"
+":param ObjectEvent event: the event to be supplemented.\n"
+"\tTo designate all events, use ObjectEvent.All.\n"
+":param Callable callback: the callback for receiving events.\n"
+"\tExpected signature (event: ObjectEvent, obj_ref: PyEdsObject) -> int.\n"
+":raises EdsError: Any of the sdk errors.");
+
+static PyObject* PyEds_SetObjectEventHandler(PyObject *Py_UNUSED(self), PyObject *args) {
+    PyObject* pyObj;
+    unsigned long event;
+    PyObject* pyCallable;
+    if (!PyArg_ParseTuple(args, "OkO:EdsSetObjectEventHandler", &pyObj, &event, &pyCallable)) {
+        return nullptr;
+    }
+
+    PyEdsObject* edsObj = PyToEds(pyObj);
+    if (!edsObj) {
+        return nullptr;
+    }
+
+    if (pyCallable == Py_None || !PyCallable_Check(pyCallable)){
+        PyErr_Format(PyExc_ValueError, "expected a callable object");
+        return nullptr;
+    }
+
+    if (!PyCallable_CheckNumberOfParameters(pyCallable, 2)) {
+        PyErr_Format(PyExc_ValueError, "expected a callable object with 2 parameters (inEvent, inRef)");
+        return nullptr;
+    }
+
+    if (pySetObjectCallback != nullptr) {
+        Py_DECREF(pySetObjectCallback);
+    }
+    pySetObjectCallback = pyCallable;
+    Py_INCREF(pySetObjectCallback);
+
+    auto callbackWrapper = [](EdsStateEvent inEvent, EdsBaseRef inRef, EdsVoid* inContext) -> EdsError {
+
+        PyGILState_STATE gstate;
+        gstate = PyGILState_Ensure();
+
+        PyObject* pyContext = static_cast<PyObject *>(inContext);
+        PyObject* pyEvent = GetEnum("edsdk.constants", "ObjectEvent", inEvent);
+        if (pyEvent == nullptr) {
+            PyErr_Clear();
+            std::cout << "Unknown Object Event: " << inEvent  << std::endl;
+            pyEvent = PyLong_FromUnsignedLong(inEvent);
+        }
+        PyObject* pyInRef = PyEdsObject_New(inRef);
+        PyObject* pyRetVal = PyObject_CallFunctionObjArgs(pyContext, pyEvent, pyInRef, nullptr);
+        if (pyRetVal == nullptr) {
+            PyErr_Format(PyExc_ValueError, "unable to call the callback");
+            Py_DECREF(pyEvent);
+            Py_DECREF(pyInRef);
+            return EDS_ERR_INVALID_FN_POINTER;
+        }
+        unsigned long retVal(PyLong_AsUnsignedLong(pyRetVal));
+        Py_DECREF(pyEvent);
+        Py_DECREF(pyInRef);
+        Py_DECREF(pyRetVal);
+
+        PyGILState_Release(gstate);
+        return retVal;
+    };
+
+    unsigned long retVal(EdsSetObjectEventHandler(edsObj->edsObj, event, callbackWrapper, pySetObjectCallback));
+
+    if (retVal != EDS_ERR_OK) {
+        Py_DECREF(pySetObjectCallback);
+        PyCheck_EDSERROR(retVal);
+    }
+    Py_RETURN_NONE;
+}
+
+
+PyObject* pySetCameraStateCallback = nullptr;
+
+PyDoc_STRVAR(PyEds_SetCameraStateEventHandler__doc__,
+"Registers a callback function for receiving status\n"
+"\tchange notification events for property states on a camera\n\n"
+":param EdsObject camera: the camera object.\n"
+":param StateEvent event: the event to be supplemented.\n"
+"\tTo designate all events, use StateEvent.All.\n"
+":param Callable callback: the callback for receiving the events.\n"
+"\tExpected signature (event: StateEvent, event_data: int) -> int.\n"
+":raises EdsError: Any of the sdk errors.");
+
+static PyObject* PyEds_SetCameraStateEventHandler(PyObject *Py_UNUSED(self), PyObject *args) {
+    PyObject* pyObj;
+    unsigned long event;
+    PyObject* pyCallable;
+    // PyObject* pyContext;
+    if (!PyArg_ParseTuple(args, "OkO:EdsSetCameraStateEventHandler", &pyObj, &event, &pyCallable)) {
+        return nullptr;
+    }
+    PyEdsObject* edsObj = PyToEds(pyObj);
+    if (!edsObj) {
+        return nullptr;
+    }
+
+    if (pyCallable == Py_None || !PyCallable_Check(pyCallable)){
+
+        PyErr_Format(PyExc_ValueError, "expected a callable object");
+        return nullptr;
+    }
+
+    if (!PyCallable_CheckNumberOfParameters(pyCallable, 2)) {
+        PyErr_Format(PyExc_ValueError, "expected a callable object with 2 parameters (inEvent, inEventData)");
+        return nullptr;
+    }
+
+    if (pySetCameraStateCallback != nullptr) {
+        Py_DECREF(pySetCameraStateCallback);
+    }
+
+    pySetCameraStateCallback = pyCallable;
+
+    Py_INCREF(pySetCameraStateCallback);
+
+    auto callbackWrapper = [](EdsStateEvent inEvent, EdsUInt32 inEventData, EdsVoid* inContext) -> EdsError {
+        PyGILState_STATE gstate;
+        gstate = PyGILState_Ensure();
+
+        PyObject* pyEvent = GetEnum("edsdk.constants", "StateEvent", inEvent);
+        if (pyEvent == nullptr) {
+            PyErr_Clear();
+            std::cout << "Unknown State Event: " << inEvent << std::endl;
+            pyEvent = PyLong_FromUnsignedLong(inEvent);
+        }
+        PyObject* pyEventData = PyLong_FromUnsignedLong(inEventData);
+        PyObject* pyContext = static_cast<PyObject *>(inContext);
+        PyObject* pyRetVal = PyObject_CallFunctionObjArgs(pyContext, pyEvent, pyEventData, nullptr);
+        if (pyRetVal == nullptr) {
+            PyErr_Format(PyExc_ValueError, "unable to call the callback");
+            Py_DECREF(pyEvent);
+            Py_DECREF(pyEventData);
+            return EDS_ERR_INVALID_FN_POINTER;
+        }
+
+        unsigned long retVal(PyLong_AsUnsignedLong(pyRetVal));
+        Py_DECREF(pyEvent);
+        Py_DECREF(pyEventData);
+        Py_DECREF(pyRetVal);
+
+        PyGILState_Release(gstate);
+        return retVal;
+    };
+
+    unsigned long retVal(
+        EdsSetCameraStateEventHandler(
+            edsObj->edsObj, event,
+            callbackWrapper,
+            pySetCameraStateCallback));
+
+    if (retVal != EDS_ERR_OK) {
+        Py_DECREF(pySetCameraStateCallback);
+        PyCheck_EDSERROR(retVal);
+    }
+    Py_RETURN_NONE;
+}
+
+
+PyDoc_STRVAR(PyEds_GetEvent__doc__,
+"This function acquires an event.\n"
+"In console application, please call this function regularly to acquire\n"
+"\tthe event from a camera.\n\n"
+":raises EdsError: Any of the sdk errors.");
+
+static PyObject* PyEds_GetEvent(PyObject *Py_UNUSED(self)) {
+    unsigned long retVal(EdsGetEvent());
+    PyCheck_EDSERROR(retVal);
     Py_RETURN_NONE;
 }
 
 
 PyMethodDef methodTable[] = {
+    // Basic functions
     {"InitializeSDK", (PyCFunction) PyEds_InitializeSDK, METH_NOARGS, PyEds_InitializeSDK__doc__},
     {"TerminateSDK", (PyCFunction) PyEds_TerminateSDK, METH_NOARGS, PyEds_TerminateSDK__doc__},
-    {"GetCameraList", (PyCFunction) PyEds_GetCameraList, METH_NOARGS, PyEds_GetCameraList__doc__},
+
+    // Item-tree operating functions
     {"GetChildCount", (PyCFunction) PyEds_GetChildCount, METH_VARARGS, PyEds_GetChildCount__doc__},
     {"GetChildAtIndex", (PyCFunction) PyEds_GetChildAtIndex, METH_VARARGS, PyEds_GetChildAtIndex__doc__},
-    {"OpenSession", (PyCFunction) PyEds_OpenSession, METH_VARARGS, PyEds_OpenSession__doc__},
-    {"CloseSession", (PyCFunction) PyEds_CloseSession, METH_VARARGS, PyEds_CloseSession__doc__},
+    {"GetParent", (PyCFunction) PyEds_GetParent, METH_O, PyEds_GetParent__doc__},
+
+    // Property operating functions
     {"GetPropertySize", (PyCFunction) PyEds_GetPropertySize, METH_VARARGS, PyEds_GetPropertySize__doc__},
     {"GetPropertyData", (PyCFunction) PyEds_GetPropertyData, METH_VARARGS, PyEds_GetPropertyData__doc__},
     {"SetPropertyData", (PyCFunction) PyEds_SetPropertyData, METH_VARARGS, PyEds_SetPropertyData__doc__},
+    {"GetPropertyDesc", (PyCFunction) PyEds_GetPropertyDesc, METH_VARARGS, PyEds_GetPropertyDesc__doc__},
+
+    // Device-list and device operating functions
+    {"GetCameraList", (PyCFunction) PyEds_GetCameraList, METH_NOARGS, PyEds_GetCameraList__doc__},
+
+    // Camera operating functions
     {"GetDeviceInfo", (PyCFunction) PyEds_GetDeviceInfo, METH_O, PyEds_GetDeviceInfo__doc__},
-    {"SetCapacity", (PyCFunction) PyEds_SetCapacity, METH_VARARGS, PyEds_SetCapacity__doc__},
+    {"OpenSession", (PyCFunction) PyEds_OpenSession, METH_VARARGS, PyEds_OpenSession__doc__},
+    {"CloseSession", (PyCFunction) PyEds_CloseSession, METH_VARARGS, PyEds_CloseSession__doc__},
     {"SendCommand", (PyCFunction) PyEds_SendCommand, METH_VARARGS, PyEds_SendCommand__doc__},
+    {"SendStatusCommand", (PyCFunction) PyEds_SendStatusCommand, METH_VARARGS, PyEds_SendStatusCommand__doc__},
+    {"SetCapacity", (PyCFunction) PyEds_SetCapacity, METH_VARARGS, PyEds_SetCapacity__doc__},
 
+    // Volume operating functions
+    {"GetVolumeInfo", (PyCFunction) PyEds_GetVolumeInfo, METH_O, PyEds_GetVolumeInfo__doc__},
+    {"FormatVolume", (PyCFunction) PyEds_FormatVolume, METH_O, PyEds_FormatVolume__doc__},
+
+    // Directory-item operating functions
     {"GetDirectoryItemInfo", (PyCFunction) PyEds_GetDirectoryItemInfo, METH_O, PyEds_GetDirectoryItemInfo__doc__},
-    {"CreateFileStream", (PyCFunction) PyEds_CreateFileStream, METH_VARARGS, PyEds_CreateFileStream__doc__},
+    {"DeleteDirectoryItem", (PyCFunction) PyEds_DeleteDirectoryItem, METH_O, PyEds_DeleteDirectoryItem__doc__},
     {"Download", (PyCFunction) PyEds_Download, METH_VARARGS, PyEds_Download__doc__},
+    {"DownloadCancel", (PyCFunction) PyEds_DownloadCancel, METH_O, PyEds_DownloadCancel__doc__},
     {"DownloadComplete", (PyCFunction) PyEds_DownloadComplete, METH_O, PyEds_DownloadComplete__doc__},
+    {"DownloadThumbnail", (PyCFunction) PyEds_DownloadThumbnail, METH_VARARGS, PyEds_DownloadThumbnail__doc__},
+    {"GetAttribute", (PyCFunction) PyEds_GetAttribute, METH_O, PyEds_GetAttribute__doc__},
+    {"SetAttribute", (PyCFunction) PyEds_SetAttribute, METH_VARARGS, PyEds_SetAttribute__doc__},
 
+    // Stream operating functions
+    {"CreateFileStream", (PyCFunction) PyEds_CreateFileStream, METH_VARARGS, PyEds_CreateFileStream__doc__},
+    {"CreateMemoryStream", (PyCFunction) PyEds_CreateMemoryStream, METH_O, PyEds_CreateMemoryStream__doc__},
+    {"CreateFileStreamEx", (PyCFunction) PyEds_CreateFileStreamEx, METH_VARARGS, PyEds_CreateFileStreamEx__doc__},
+    {"CreateMemoryStreamFromPointer", (PyCFunction) PyEds_CreateMemoryStreamFromPointer, METH_O, PyEds_CreateMemoryStreamFromPointer__doc__},
+    // {"GetPointer", (PyCFunction) PyEds_GetPointer, METH_O, PyEds_GetPointer__doc__},
+    // {"Read", (PyCFunction) PyEds_Read, METH_VARARGS, PyEds_Read__doc__},
+    // {"Write", (PyCFunction) PyEds_Write, METH_VARARGS, PyEds_Write__doc__},
+    // {"Seek", (PyCFunction) PyEds_Seek, METH_VARARGS, PyEds_Seek__doc__},
+    {"GetPosition", (PyCFunction) PyEds_GetPosition, METH_O, PyEds_GetPosition__doc__},
+    {"GetLength", (PyCFunction) PyEds_GetLength, METH_O, PyEds_GetLength__doc__},
+    {"CopyData", (PyCFunction) PyEds_CopyData, METH_VARARGS, PyEds_CopyData__doc__},
+    {"SetProgressCallback", (PyCFunction) PyEds_SetProgressCallback, METH_VARARGS, PyEds_SetProgressCallback__doc__},
+
+    // Image operating functions
+    {"CreateImageRef", (PyCFunction) PyEds_CreateImageRef, METH_O, PyEds_CreateImageRef__doc__},
+    {"GetImageInfo", (PyCFunction) PyEds_GetImageInfo, METH_VARARGS, PyEds_GetImageInfo__doc__},
+    // {"GetImage", (PyCFunction) PyEds_GetImage, METH_VARARGS, PyEds_GetImage__doc__},
+    {"CreateEvfImageRef", (PyCFunction) PyEds_CreateEvfImageRef, METH_O, PyEds_CreateEvfImageRef__doc__},
+    {"DownloadEvfImage", (PyCFunction) PyEds_DownloadEvfImage, METH_VARARGS, PyEds_DownloadEvfImage__doc__},
+
+    // Event handler registering functions
     {"SetCameraAddedHandler", (PyCFunction) PyEds_SetCameraAddedHandler, METH_VARARGS, PyEds_SetCameraAddedHandler__doc__},
-    {"SetCameraStateEventHandler", (PyCFunction) PyEds_SetCameraStateEventHandler, METH_VARARGS, PyEds_SetCameraStateEventHandler__doc__},
-    {"SetObjectEventHandler", (PyCFunction) PyEds_SetObjectEventHandler, METH_VARARGS, PyEds_SetObjectEventHandler__doc__},
     {"SetPropertyEventHandler", (PyCFunction) PyEds_SetPropertyEventHandler, METH_VARARGS, PyEds_SetPropertyEventHandler__doc__},
+    {"SetObjectEventHandler", (PyCFunction) PyEds_SetObjectEventHandler, METH_VARARGS, PyEds_SetObjectEventHandler__doc__},
+    {"SetCameraStateEventHandler", (PyCFunction) PyEds_SetCameraStateEventHandler, METH_VARARGS, PyEds_SetCameraStateEventHandler__doc__},
+
+    // {"CreateStream", (PyCFunction) PyEds_CreateStream, METH_O, PyEds_CreateStream__doc__},
+    {"GetEvent", (PyCFunction) PyEds_GetEvent, METH_NOARGS, PyEds_GetEvent__doc__},
+    // {"SetFramePoint", (PyCFunction) PyEds_SetFramePoint, METH_VARARGS, PyEds_SetFramePoint__doc__},
 
     {nullptr, nullptr, 0, nullptr} // Sentinel value ending the table
 };
@@ -1375,21 +2145,13 @@ PyModuleDef edsdkModule = {
     NULL  // Optional module deallocation function
 };
 
+
 // The module init function
 PyMODINIT_FUNC PyInit_api(void) {
     PyEdsObjectType.tp_new = PyType_GenericNew;
     if (PyType_Ready(&PyEdsObjectType) < 0)  {
         return NULL;
     }
-
-    // PyEdsObjectType.tp_name = "edsdk.api.PyEdsObject";
-    // PyEdsObjectType.tp_basicsize = sizeof(PyEdsObject);
-    // PyEdsObjectType.tp_doc = PyDoc_STR("PyEdsObject object");
-    // PyEdsObjectType.tp_new = PyType_GenericNew;
-    // // PyEdsObjectType.tp_alloc = PyType_GenericAlloc;
-    // PyEdsObjectType.tp_itemsize = 0;
-    // PyEdsObjectType.tp_dealloc = (destructor)PyEdsObject_dealloc;
-    // PyEdsObjectType.tp_flags = Py_TPFLAGS_DEFAULT;
 
     PyObject *module = PyModule_Create(&edsdkModule);
     if (module == NULL) {

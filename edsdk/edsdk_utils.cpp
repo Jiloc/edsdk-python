@@ -1,7 +1,13 @@
-#include "edsdk_error_map.h"
+#include "edsdk_utils.h"
+
+#include <string>
+#include <map>
+
+#include "EDSDKErrors.h"
+
 
 namespace EDS {
-    char const * errorMessage(EdsError const error) {
+    char const *errorMessage(EdsError const error) {
         static std::map<EdsError const, char const *> const errorMap = {
             /*-----------------------------------------------------------------------
             ED-SDK Error Code Masks
@@ -188,4 +194,74 @@ namespace EDS {
         std::map<EdsError const, char const *>::const_iterator it = errorMap.find(error);
         return it == errorMap.end() ? "Unknown error" : it->second;
     }
+
+
+    PyObject *PyDict_FromEdsPoint(EdsPoint const &point) {
+        PyObject *pyDict(PyDict_New());
+        PyObject *pyX(PyLong_FromLong(point.x));
+        PyObject *pyY(PyLong_FromLong(point.y));
+        PyDict_SetItemString(pyDict, "x", pyX);
+        PyDict_SetItemString(pyDict, "y", pyY);
+        Py_DECREF(pyX);
+        Py_DECREF(pyY);
+        return pyDict;
+    }
+
+
+    PyObject *PyDict_FromEdsSize(EdsSize const &size) {
+        PyObject *pyDict(PyDict_New());
+        PyObject *pyWidth(PyLong_FromLong(size.width));
+        PyObject *pyHeight(PyLong_FromLong(size.height));
+        PyDict_SetItemString(pyDict, "width", pyWidth);
+        PyDict_SetItemString(pyDict, "height", pyHeight);
+        Py_DECREF(pyWidth);
+        Py_DECREF(pyHeight);
+        return pyDict;
+    }
+
+
+    PyObject *PyDict_FromEdsRect(EdsRect const &rect) {
+        PyObject *pyDict(PyDict_New());
+        PyObject *pyPoint(PyDict_FromEdsPoint(rect.point));
+        PyObject *pySize(PyDict_FromEdsSize(rect.size));
+        PyDict_SetItemString(pyDict, "point", pyPoint);
+        PyDict_SetItemString(pyDict, "size", pySize);
+        Py_DECREF(pyPoint);
+        Py_DECREF(pySize);
+        return pyDict;
+    }
+
+
+    PyObject *PyDict_FromEdsImageInfo(EdsImageInfo const &imageInfo) {
+        PyObject *pyWidth(PyLong_FromUnsignedLong(imageInfo.width));
+        PyObject *pyHeight(PyLong_FromUnsignedLong(imageInfo.height));
+        PyObject *pyNumOfComponents(PyLong_FromUnsignedLong(imageInfo.numOfComponents));
+        PyObject *pyComponentDepth(PyLong_FromUnsignedLong(imageInfo.componentDepth));
+        PyObject *pyEffectiveRect(PyDict_FromEdsRect(imageInfo.effectiveRect));
+        PyObject *pyReserved1(PyLong_FromUnsignedLong(imageInfo.reserved1));
+        PyObject *pyReserved2(PyLong_FromUnsignedLong(imageInfo.reserved2));
+
+        PyObject* pyImageInfo(PyDict_New());
+        PyDict_SetItemString(pyImageInfo, "width", pyWidth);
+        PyDict_SetItemString(pyImageInfo, "height", pyHeight);
+        PyDict_SetItemString(pyImageInfo, "numOfComponents", pyNumOfComponents);
+        PyDict_SetItemString(pyImageInfo, "componentDepth", pyComponentDepth);
+        PyDict_SetItemString(pyImageInfo, "effectiveRect", pyEffectiveRect);
+        PyDict_SetItemString(pyImageInfo, "reserved1", pyReserved1);
+        PyDict_SetItemString(pyImageInfo, "reserved2", pyReserved2);
+
+        Py_DECREF(pyWidth);
+        Py_DECREF(pyHeight);
+        Py_DECREF(pyNumOfComponents);
+        Py_DECREF(pyComponentDepth);
+        Py_DECREF(pyEffectiveRect);
+        Py_DECREF(pyReserved1);
+        Py_DECREF(pyReserved2);
+        return pyImageInfo;
+    }
+
+
+
+
+
 }

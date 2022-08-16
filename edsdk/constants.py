@@ -251,3 +251,41 @@ class FileCreateDisposition(IntEnum):
     OpenExisting = 2
     OpenAlways = 3
     TruncateExisting = 4
+
+
+class ProgressOption(IntEnum):
+    NoReport = 0
+    Done = 1
+    Periodically = 2
+
+
+class CameraStatusCommand(IntEnum):
+    UILock = 0x00000000
+    UIUnLock = 0x00000001
+    EnterDirectTransfer = 0x00000002
+    ExitDirectTransfer = 0x00000003
+
+
+class StorageType(IntEnum):
+    Non = 0
+    CF = 1
+    SD = 2
+    HD = 4
+    CFast = 5
+    CFe = 7
+
+
+class FileAttributes(IntEnum):
+    Normal = 0x00000000
+    ReadOnly = 0x00000001
+    Hidden = 0x00000002
+    System = 0x00000004
+    Archive = 0x00000020
+
+
+class ImageSource(IntEnum):
+    FullView = 0
+    Thumbnail = 1
+    Preview = 2
+    RAWThumbnail = 3
+    RAWFullView = 4
