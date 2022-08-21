@@ -23,6 +23,10 @@ namespace EDS {
     PyObject *PyDict_FromEdsRect(EdsRect const &rect);
     PyObject *PyDict_FromEdsImageInfo(EdsImageInfo const &imageInfo);
 
+    bool PyDict_ToEdsPoint(PyObject *pyDict, EdsPoint &point);
+    bool PyDict_ToEdsSize(PyObject *pyDict, EdsSize &size);
+    bool PyDict_ToEdsRect(PyObject *pyDict, EdsRect &rect);
+
     std::map<EdsDataType const, std::size_t const> const DataTypeSize = {
         {kEdsDataType_Bool, sizeof(EdsBool)},
         {kEdsDataType_Int8, sizeof(EdsInt8)},

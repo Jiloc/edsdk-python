@@ -261,7 +261,52 @@ namespace EDS {
     }
 
 
+    bool PyDict_ToEdsPoint(PyObject *pyDict, EdsPoint &point) {
+        // Check if the dictionary has the correct keys
+        PyObject *pyX(PyDict_GetItemString(pyDict, "width"));
+        PyObject *pyY(PyDict_GetItemString(pyDict, "height"));
+
+        if (!pyX || !pyY || !PyLong_Check(pyX) || !PyLong_Check(pyY)) {
+            PyErr_SetString(
+                PyExc_TypeError,
+                "Invalid EdsPoint, expected {\"x\": int, \"y\": int)");
+            return false;
+        }
+        point.x = PyLong_AsLong(pyX);
+        point.y = PyLong_AsLong(pyY);
+        return true;
+    }
 
 
+    bool PyDict_ToEdsSize(PyObject *pyDict, EdsSize &size) {
+        PyObject *pyWidth(PyDict_GetItemString(pyDict, "width"));
+        PyObject *pyHeight(PyDict_GetItemString(pyDict, "height"));
 
+        if (!pyWidth || !pyHeight || !PyLong_Check(pyWidth) || !PyLong_Check(pyHeight)){
+            PyErr_SetString(
+                PyExc_TypeError,
+                "Invalid EdsSize, expected {\"width\": int, \"height\": int)");
+            return false;
+        }
+        size.width = PyLong_AsLong(pyWidth);
+        size.height = PyLong_AsLong(pyHeight);
+        return true;
+    }
+
+
+    bool PyDict_ToEdsRect(PyObject *pyDict, EdsRect &rect) {
+        PyObject *pyPoint(PyDict_GetItemString(pyDict, "point"));
+        PyObject *pySize(PyDict_GetItemString(pyDict, "size"));
+
+        if (!PyDict_Check(pyPoint) || !PyDict_Check(pySize)){
+            PyErr_SetString(
+                PyExc_TypeError,
+                "Invalid EdsRect, expected {"
+                "\"point\": {\"x\": int, \"y\": int}, "
+                "\"size\": {\"width\": int, \"height\": int}}");
+            return false;
+        }
+        return PyDict_ToEdsPoint(pyDict, rect.point) &&
+               PyDict_ToEdsSize(pyDict, rect.size);
+    }
 }

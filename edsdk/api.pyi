@@ -11,6 +11,7 @@ from edsdk.constants import (
     FileCreateDisposition,
     DataType,
     ImageSource,
+    TargetImageType,
 )
 
 
@@ -480,6 +481,40 @@ def GetImageInfo(image: EdsObject, image_source: ImageSource) -> Dict[str, Any]:
     :raises EdsError: Any of the sdk errors.
     :return Dict[str, Any]: Stores the image data information designated
         in inImageSource.
+    """
+    ...
+
+
+def GetImage(
+    image: EdsObject, image_source: ImageSource, image_type: TargetImageType,
+    source_rect: Dict[str, Dict[str, int]], dest_size: Dict[str, int]
+) -> EdsObject:
+    """Gets designated image data from an image file, in the form of a
+        designated rectangle.
+    Returns uncompressed results for JPEGs and processed results
+        in the designated pixel order (RGB, Top-down BGR, and so on) for
+        RAW images.
+    Additionally, by designating the input/output rectangle,
+        it is possible to get reduced, enlarged, or partial images.
+    However, because images corresponding to the designated output rectangle
+        are always returned by the SDK, the SDK does not take the aspect
+        ratio into account.
+    To maintain the aspect ratio, you must keep the aspect ratio in mind
+        when designating the rectangle.
+
+    :param EdsObject image: The image for which to get the image data.
+    :param ImageSource image_source: Designate the type of image data to get
+        from the image file (thumbnail, preview, and so on).
+    :param TargetImageType image_type: Designate the output image type. Because
+        the output format of GetImage may only be RGB, only
+        TargetImageType.RGB or TargetImageType.RGB16 can be designed.
+        However, image types exceeding the resolution of
+        image_source cannot be designated.
+    :param Dict[str, Dict[str, int]] source_rect: Designate the coordinates
+        and size of the rectangle to be retrieved from the source image.
+    :param Dict[str, int] dest_size: Designate the rectangle size for output.
+    :raises EdsError: Any of the sdk errors.
+    :return EdsObject: the memory or file stream for output of the image.
     """
     ...
 

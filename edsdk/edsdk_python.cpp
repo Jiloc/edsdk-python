@@ -1674,6 +1674,70 @@ static PyObject* PyEds_GetImageInfo(PyObject *Py_UNUSED(self), PyObject *args){
 }
 
 
+PyDoc_STRVAR(PyEds_GetImage__doc__,
+"Gets designated image data from an image file, in the form of a\n"
+"\tdesignated rectangle.\n"
+"Returns uncompressed results for JPEGs and processed results\n"
+"\tin the designated pixel order (RGB, Top-down BGR, and so on) for\n"
+"\tRAW images.\n"
+"Additionally, by designating the input/output rectangle,\n"
+"\tit is possible to get reduced, enlarged, or partial images.\n"
+"However, because images corresponding to the designated output rectangle\n"
+"\tare always returned by the SDK, the SDK does not take the aspect\n"
+"\tratio into account.\n"
+"To maintain the aspect ratio, you must keep the aspect ratio in mind\n"
+"\twhen designating the rectangle.\n\n"
+":param EdsObject image: The image for which to get the image data.\n"
+":param ImageSource image_source: Designate the type of image data to get\n"
+"\tfrom the image file (thumbnail, preview, and so on).\n"
+":param TargetImageType image_type: Designate the output image type. Because\n"
+"\tthe output format of GetImage may only be RGB, only\n"
+"\tTargetImageType.RGB or TargetImageType.RGB16 can be designated.\n"
+"\tHowever, image types exceeding the resolution of"
+"\timage_source cannot be designated.\n"
+":param Dict[str, Dict[str, int]] source_rect: Designate the coordinates\n"
+"\tand size of the rectangle to be retrieved from the source image.\n"
+":param Dict[str, int] dest_size: Designate the rectangle size for output.\n"
+":raises EdsError: Any of the sdk errors.\n"
+":return EdsObject: the memory or file stream for output of the image.");
+
+static PyObject* PyEds_GetImage(PyObject *Py_UNUSED(self), PyObject *args){
+    PyObject *pyImage;
+    unsigned long imageSource;
+    unsigned long imageType;
+    PyObject *pySourceRect;
+    PyObject *pyDestSize;
+
+    if (!PyArg_ParseTuple(
+            args, "OKKOO:GetImage", &pyImage, &imageSource, &imageType,
+            &PyDict_Type, &pySourceRect, &PyDict_Type, &pyDestSize)) {
+        return nullptr;
+    }
+
+    PyEdsObject *pyEdsObject(PyToEds(pyImage));
+    EdsRect sourceRect;
+    EdsSize destSize;
+    EdsStreamRef streamRef;
+
+    if (pyEdsObject == nullptr ||
+            !EDS::PyDict_ToEdsRect(pySourceRect, sourceRect) ||
+            !EDS::PyDict_ToEdsSize(pyDestSize, destSize)) {
+        return nullptr;
+    }
+
+    unsigned long retVal(EdsGetImage(
+        pyEdsObject->edsObj,
+        static_cast<EdsImageSource>(imageSource),
+        static_cast<EdsTargetImageType>(imageType),
+        sourceRect, destSize, streamRef));
+    PyCheck_EDSERROR(retVal);
+
+    PyObject *pyStream = PyEdsObject_New(streamRef);
+    assert(pyStream);
+    return pyStream;
+}
+
+
 PyDoc_STRVAR(PyEds_CreateEvfImageRef__doc__,
 "Creates an object used to get the live view image data set.\n\n"
 ":param EdsObject stream: The stream which opened to get EVF JPEG image.\n"
@@ -2121,7 +2185,7 @@ PyMethodDef methodTable[] = {
     // Image operating functions
     {"CreateImageRef", (PyCFunction) PyEds_CreateImageRef, METH_O, PyEds_CreateImageRef__doc__},
     {"GetImageInfo", (PyCFunction) PyEds_GetImageInfo, METH_VARARGS, PyEds_GetImageInfo__doc__},
-    // {"GetImage", (PyCFunction) PyEds_GetImage, METH_VARARGS, PyEds_GetImage__doc__},
+    {"GetImage", (PyCFunction) PyEds_GetImage, METH_VARARGS, PyEds_GetImage__doc__},
     {"CreateEvfImageRef", (PyCFunction) PyEds_CreateEvfImageRef, METH_O, PyEds_CreateEvfImageRef__doc__},
     {"DownloadEvfImage", (PyCFunction) PyEds_DownloadEvfImage, METH_VARARGS, PyEds_DownloadEvfImage__doc__},
 
