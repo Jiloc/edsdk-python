@@ -1050,8 +1050,14 @@ static PyObject* PyEds_GetDirectoryItemInfo(PyObject *Py_UNUSED(self), PyObject 
     PyObject *pyGroupID = PyLong_FromUnsignedLong(dirItemInfo.groupID);
     PyObject *pyOption = PyLong_FromUnsignedLong(dirItemInfo.option);
     PyObject *pySzFileName = PyUnicode_DecodeFSDefault(dirItemInfo.szFileName);
-    PyObject *pyFormat = PyLong_FromUnsignedLong(dirItemInfo.format);
+    PyObject *pyFormat = GetEnum("constants", "ObjectFormat", dirItemInfo.format);
+    if (pyFormat == nullptr) {
+        PyErr_Clear();
+        std::cout << "Unknown ObjectFormat: " << dirItemInfo.format << std::endl;
+        pyFormat = PyLong_FromUnsignedLong(dirItemInfo.format);
+    }
     PyObject *pyDateTime = PyLong_FromUnsignedLong(dirItemInfo.dateTime);
+
     PyObject* pyDirItemInfo(PyDict_New());
     PyDict_SetItemString(pyDirItemInfo, "size", pySize);
     PyDict_SetItemString(pyDirItemInfo, "isFolder", pyIsFolder);
