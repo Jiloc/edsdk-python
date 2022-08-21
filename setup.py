@@ -1,7 +1,5 @@
 import os
-import sys
-import pathlib
-from setuptools import setup, Extension
+from setuptools import setup, Extension, find_packages
 
 package_name = "edsdk-python"
 version = "0.1"
@@ -51,7 +49,7 @@ setup(
         'pywin32 >= 228 ; platform_system=="Windows"'
     ],
     setup_requires=["wheel"],
-    packages=["edsdk"],
+    packages=find_packages(),
     include_package_data=True,
     package_data={
         "edsdk": ["py.typed", "api.pyi"],
