@@ -1,2 +1,2 @@
 from edsdk.api import *
-from edsdk.contants import *
+from edsdk.constants import *
