@@ -61,7 +61,7 @@ if __name__ == "__main__":
     edsdk.OpenSession(cam)
     edsdk.SetObjectEventHandler(cam, ObjectEvent.All, callback_object)
     edsdk.SetPropertyData(cam, PropID.SaveTo, 0, SaveTo.Host)
-    print(edsdk.GetPropertyData(cam, PropID.SaveTo))
+    print(edsdk.GetPropertyData(cam, PropID.SaveTo, 0))
 
     # Sets (Computer's) Capacity to an arbitrary big value
     edsdk.SetCapacity(
