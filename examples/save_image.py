@@ -11,6 +11,7 @@ from edsdk import (
     Access,
     SaveTo,
     EdsObject,
+    PropertyEvent
 )
 
 if os.name == "nt":
@@ -62,7 +63,7 @@ if __name__ == "__main__":
     edsdk.SetPropertyData(cam, PropID.SaveTo, 0, SaveTo.Host)
     print(edsdk.GetPropertyData(cam, PropID.SaveTo))
 
-    # Sets HD Capacity to an arbitrary big value
+    # Sets (Computer's) Capacity to an arbitrary big value
     edsdk.SetCapacity(
         cam, {"reset": True, "bytesPerSector": 512, "numberOfFreeClusters": 2147483647}
     )
